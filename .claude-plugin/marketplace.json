@@ -1,0 +1,11 @@
+{
+  "name": "crab-sessions",
+  "owner": { "name": "Gabriele Bessi" },
+  "plugins": [
+    {
+      "name": "crab-sessions",
+      "source": "./",
+      "description": "Pannello laterale con le sessioni di Claude Code, limiti 5 ore e settimanali e mascotte granchio pixel art"
+    }
+  ]
+}
