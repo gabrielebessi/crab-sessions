@@ -42,9 +42,14 @@ const BODY_ROWS = [
 
 type Cv = (string | null)[][]
 type Px = [number, number, string]
-type Pose = 'down' | 'mid' | 'up' | 'type'
-type Skin = { label: string; fx: (t: number) => Px[] }
-export type CrabState = 'working' | 'idle' | 'asking'
+type Pose = 'down' | 'mid' | 'up' | 'low' | 'type'
+// back stands still behind the crab; fx is drawn on the body (it bobs with it)
+// what a skin may need of the crab's current look: the claws' poses and the eyes
+type Look = { left: Pose; right: Pose; eyes: string }
+type Skin = { label: string; fx: (t: number, look: Look) => Px[]; back?: (t: number) => Px[] }
+const isFront = (p: Pose) => p === 'type'
+// working: busy · asking: a question · approval: a permission prompt · waiting: turn done, your move · idle: waiting for long
+export type CrabState = 'working' | 'idle' | 'asking' | 'approval' | 'waiting'
 const cv0 = (): Cv => Array.from({ length: H }, () => Array(W).fill(null))
 const put = (cv: Cv, x: number, y: number, c: string) => {
   const X = x + OX
@@ -79,21 +84,35 @@ function claw(side: 'L' | 'R', pose: Pose): Px[] {
   if (pose === 'down') { pinc(0, 5); add(4, 7, 'O'); add(4, 8, 'D') }
   else if (pose === 'mid') { pinc(0, 3); add(3, 7, 'O'); add(4, 8, 'D'); add(3, 6, 'O') }
   else if (pose === 'up') { pinc(0, 0); add(1, 4, 'O'); add(2, 5, 'O'); add(3, 6, 'O'); add(4, 7, 'O') }
+  else if (pose === 'low') { pinc(0, 8); add(4, 9, 'O'); add(4, 10, 'D') }
   else if (pose === 'type') { pinc(2, 8); add(1, 8, 'O'); add(1, 7, 'O') }
   return px
 }
+
+// Rows of pixels to Px: a digit goes through `tint`, any other letter is a palette key, a dot is empty.
+const art = (rows: string[], x0: number, y0: number, tint: (c: string) => string = c => c): Px[] =>
+  rows.flatMap((row, dy) =>
+    [...row].flatMap((c, dx): Px[] => (c === '.' ? [] : [[x0 + dx, y0 + dy, /\d/.test(c) ? tint(c) : c]])),
+  )
 
 const skins: Record<string, Skin> = {
   plain: { label: 'Base', fx: () => [] },
   code: {
     label: 'Sviluppo',
-    fx: (t: number): Px[] => {
+    fx: (): Px[] => [],
+    // a monitor around the crab: code scrolls above its head, it stands on the bottom edge
+    back: (t: number): Px[] => {
       const px: Px[] = []
-      for (let x = 6; x <= 13; x++) px.push([x, 7, 'K'], [x, 8, 'K'])
-      ;[[7, 7], [8, 7], [10, 8], [11, 8], [7, 8], [9, 7], [12, 7]].forEach(([x, y], i) => {
-        if ((i + t) % 3 !== 0) px.push([x, y, 'G'])
-      })
-      for (let x = 5; x <= 14; x++) px.push([x, 9, 'B'])
+      for (let x = -1; x <= 21; x++) px.push([x, -6, 'g'], [x, 11, 'g'])
+      for (let y = -5; y <= 10; y++) {
+        px.push([-1, y, 'g'], [21, y, 'g'])
+        for (let x = 0; x <= 20; x++) px.push([x, y, 'K'])
+      }
+      for (let i = 0; i < 6; i++) {
+        if ((i + t) % 5 === 4) continue
+        const len = 4 + ((i * 5 + t * 3) % 11)
+        for (let x = 2; x < 2 + len && x <= 18; x++) px.push([x, -4 + i, 'G'])
+      }
       return px
     },
   },
@@ -139,6 +158,61 @@ const skins: Record<string, Skin> = {
       return px
     },
   },
+  design: {
+    label: 'Design',
+    fx: (t: number): Px[] => {
+      const px: Px[] = []
+      // red beret
+      px.push([10, 0, 'R'])
+      for (let x = 8; x <= 12; x++) px.push([x, 1, 'R'])
+      for (let x = 6; x <= 13; x++) px.push([x, 2, 'R'])
+      // a painter's palette at the lower right, the claw resting on it, its dabs changing colour
+      const paint = ['R', 'Y', 'U', 'G']
+      px.push(...art(['.ppppp.', 'pP1P2Pp', 'pP3P4Kp', '.ppppp.'], 15, 8, c => paint[(Number(c) - 1 + t) % 4]!))
+      // a big brush in the left claw: the head sways, its tip changes colour, a drip falls beside it
+      const tip = paint[t % 4]!
+      const sway = t % 2
+      px.push(
+        ...art(['1111', 'PPPP', 'PPPP'], -sway, -1, () => tip),
+        ...art(['.BB.', '.NN.', '.NN.', '.NN.'], 0, 2),
+        [-1, 2 + (t % 4), paint[(t + 1) % 4]!],
+      )
+      return px
+    },
+  },
+  app: {
+    label: 'App',
+    fx: (t: number): Px[] => {
+      const icons = ['W', 'Y', 'R', 'G']
+      // a phone on the left claw: blue screen, app icons changing colour
+      return art(['ggggg', 'g1U2g', 'gUUUg', 'g3U4g', 'gUUUg', 'ggBgg'], -1, -6, c => icons[(Number(c) - 1 + t) % 4]!)
+    },
+  },
+  debug: {
+    label: 'Debugging',
+    fx: (t: number, look: Look): Px[] => {
+      const px: Px[] = []
+      // a dark hood around the face, drawstrings on the hoodie, eyes glowing green
+      for (let x = 8; x <= 11; x++) px.push([x, 1, 'K'])
+      for (let x = 6; x <= 13; x++) px.push([x, 2, 'K'])
+      for (let x = 5; x <= 14; x++) px.push([x, 3, 'K'])
+      for (let y = 4; y <= 9; y++) px.push([5, y, 'K'], [6, y, 'K'], [13, y, 'K'], [14, y, 'K'])
+      for (let y = 7; y <= 9; y++) for (let x = 7; x <= 12; x++) px.push([x, y, 'K'])
+      px.push([8, 7, 'W'], [8, 8, 'W'], [11, 7, 'W'], [11, 8, 'W'])
+      EYES[look.eyes]?.forEach(([x, y]) => px.push([x, y, 'G']))
+      // code raining beside it
+      for (let i = 0; i < 3; i++) px.push([15 + i * 2, -5 + ((t + i * 2) % 5), 'G'])
+      return px
+    },
+  },
+  video: {
+    label: 'Video',
+    fx: (t: number): Px[] => {
+      // a movie camera at the left, centred on the body and held from below (inside the visible area): reels turning, REC light blinking
+      const reels = t % 2 ? '.KB.KB' : '.BK.BK'
+      return art(['.BB.BB', reels, 'KKgggg', t % 2 ? 'CKgggK' : 'CKgggR', 'KKgggg'], -1, 3)
+    },
+  },
 }
 export const SKINS: Record<string, string> = Object.fromEntries(Object.entries(skins).map(([k, v]) => [k, v.label]))
 
@@ -146,6 +220,10 @@ export const SKINS: Record<string, string> = Object.fromEntries(Object.entries(s
 export function pickSkin(title = '', cwd = ''): string {
   const s = `${title} ${cwd}`.toLowerCase()
   const has = (re: RegExp) => re.test(s)
+  if (has(/bug|debug|errore|crash|stacktrace|\bfix|diagnos/)) return 'debug'
+  if (has(/video|remotion|ffmpeg|\bclip|render|animazion|youtube|\breel/)) return 'video'
+  if (has(/design|figma|\bui\b|\bux\b|mockup|grafica|\blogo|branding/)) return 'design'
+  if (has(/\bapp\b|react.?native|\bios\b|android|\bexpo\b|simulator|mobile|swift|flutter/)) return 'app'
   if (has(/ps5|game|gioco|unity|three|rts|remote-play/)) return 'game'
   if (has(/server|aws|terraform|docker|modem|rete|deploy|infra|devops|moodle|latenza|forge/)) return 'devops'
   if (has(/timesheet|report|document|present|pdf|word|email|cliente|fattur|giornalett|news/)) return 'docs'
@@ -159,6 +237,9 @@ const GLYPHS: Record<string, string[]> = {
   z: ['SSS', '..S', '.S.', 'SSS'],
   Z: ['SSSS', '...S', '..S.', '.S..', 'SSSS'],
   dot: ['QQ', 'QQ'],
+  lock: ['.yy.', 'y..y', 'QQQQ', 'QyyQ', 'QQQQ'],
+  unlock: ['.yy.', 'y...', 'QQQQ', 'QyyQ', 'QQQQ'],
+  check: ['....G', '...GG', 'G.GG.', 'GGG..', '.G...'],
 }
 function glyph(cv: Cv, name: string, x: number, y: number) {
   GLYPHS[name].forEach((row, dy) => [...row].forEach((c, dx) => c !== '.' && putAbs(cv, x + dx, y + dy, c)))
@@ -168,24 +249,49 @@ type FrameOpts = { skin: string; t?: number; lift?: number; left?: Pose; right?:
 function frame({ skin, t = 0, lift = 0, left = 'down', right = 'down', eyes = 'open', leg = 0, extra }: FrameOpts): Cv {
   const cv = cv0()
   const sk = skins[skin] ?? skins.plain
+  sk.back?.(t).forEach(([x, y, c]) => put(cv, x, y, c))
   BODY_ROWS.forEach((row, y) => [...row].forEach((c, x) => c !== '.' && put(cv, x, y - lift, c)))
   LEGS[leg].forEach((xs, i) => xs.forEach((x) => put(cv, x, 10 + i, 'D')))
-  const typing = left === 'type' || right === 'type'
+  const typing = isFront(left) || isFront(right)
   ;[...claw('L', left), ...claw('R', right)].forEach(([x, y, c]) => put(cv, x, y - (typing ? 0 : lift), c))
   EYES[eyes].forEach(([x, y, c]) => put(cv, x, y - lift, c))
-  sk.fx(t).forEach(([x, y, c]) => put(cv, x, y - lift, c))
-  // typing claws drawn in front of the laptop / pad
-  if (left === 'type') claw('L', 'type').forEach(([x, y, c]) => put(cv, x, y, c))
-  if (right === 'type') claw('R', 'type').forEach(([x, y, c]) => put(cv, x, y, c))
+  sk.fx(t, { left, right, eyes }).forEach(([x, y, c]) => put(cv, x, y - lift, c))
+  // typing claws drawn in front of the pad
+  if (isFront(left)) claw('L', left).forEach(([x, y, c]) => put(cv, x, y, c))
+  if (isFront(right)) claw('R', right).forEach(([x, y, c]) => put(cv, x, y, c))
   extra?.(cv)
   return cv
 }
 
+// skins with a prop on the left claw: that claw keeps its pose in every state, and the right one does the gestures
+const HELD: Record<string, { left: Pose; right?: Pose }> = {
+  design: { left: 'down', right: 'down' },
+  app: { left: 'up' },
+  video: { left: 'low' },
+}
+
 export function framesFor(skin: string, state: CrabState) {
-  const F = (ms: number, o: Omit<FrameOpts, 'skin'>) => ({ ms, cv: frame({ skin, ...o }) })
+  const held = HELD[skin]
+  const hold = (o: Omit<FrameOpts, 'skin'>): Omit<FrameOpts, 'skin'> =>
+    !held
+      ? o
+      : {
+          ...o,
+          left: held.left,
+          right: held.right ?? (o.left && o.left !== 'down' && o.left !== held.left ? o.left : o.right),
+        }
+  const F = (ms: number, o: Omit<FrameOpts, 'skin'>) => ({ ms, cv: frame({ skin, ...hold(o) }) })
   if (state === 'working') {
     const dotRow = (n: number) => (cv: Cv) => { for (let i = 0; i < n; i++) glyph(cv, 'dot', 20 + i * 3, 4) }
-    const a: Pose = skin === 'code' || skin === 'game' ? 'type' : 'up'
+    if (held) {
+      return [
+        F(240, { t: 0, left: held.left, right: 'down', leg: 0, extra: dotRow(1) }),
+        F(240, { t: 1, left: held.left, right: 'mid', leg: 1, lift: 1, extra: dotRow(2) }),
+        F(240, { t: 2, left: held.left, right: 'down', leg: 0, extra: dotRow(3) }),
+        F(240, { t: 3, left: held.left, right: 'mid', leg: 1, lift: 1, extra: dotRow(2) }),
+      ]
+    }
+    const a: Pose = skin === 'game' ? 'type' : 'up'
     return [
       F(240, { t: 0, left: a, right: 'down', leg: 0, extra: dotRow(1) }),
       F(240, { t: 1, left: 'down', right: a, leg: 1, lift: 1, extra: dotRow(2) }),
@@ -197,6 +303,26 @@ export function framesFor(skin: string, state: CrabState) {
     return [
       F(320, { t: 0, left: 'down', right: 'up', eyes: 'wide', extra: (cv: Cv) => glyph(cv, '?', 20, 1) }),
       F(320, { t: 1, left: 'down', right: 'mid', eyes: 'wide', lift: 1, extra: (cv: Cv) => glyph(cv, '?', 20, 2) }),
+    ]
+  }
+  if (state === 'approval') {
+    // both claws up, a padlock that clicks open: "let me through"
+    const lock = (name: string, y: number) => (cv: Cv) => glyph(cv, name, 20, y)
+    return [
+      F(300, { t: 0, left: 'up', right: 'up', eyes: 'wide', extra: lock('lock', 1) }),
+      F(300, { t: 1, left: 'up', right: 'up', eyes: 'wide', lift: 1, extra: lock('lock', 2) }),
+      F(300, { t: 2, left: 'up', right: 'up', eyes: 'wide', extra: lock('lock', 1) }),
+      F(450, { t: 3, left: 'mid', right: 'up', eyes: 'wide', lift: 1, extra: lock('unlock', 2) }),
+    ]
+  }
+  if (state === 'waiting') {
+    // turn finished: a green tick, one claw waving, a blink now and then
+    const tick = (cv: Cv) => glyph(cv, 'check', 20, 1)
+    return [
+      F(380, { t: 0, left: 'up', right: 'down', leg: 0, extra: tick }),
+      F(380, { t: 1, left: 'mid', right: 'down', leg: 1, extra: tick }),
+      F(380, { t: 2, left: 'up', right: 'down', leg: 0, extra: tick }),
+      F(160, { t: 3, left: 'mid', right: 'down', leg: 1, eyes: 'blink', extra: tick }),
     ]
   }
   return [

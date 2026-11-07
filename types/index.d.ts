@@ -1,4 +1,5 @@
-export type RowState = 'working' | 'waiting' | 'asking'
+// asking: a question for you · approval: a permission prompt · waiting: turn done
+export type RowState = 'working' | 'waiting' | 'asking' | 'approval'
 
 export type AgentRow = { id: string; type: string; desc: string; running: boolean; at: number }
 

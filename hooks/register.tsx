@@ -69,9 +69,57 @@ type Registry = {
   messagingSocketPath?: string
 }
 
+type Flag = 'question' | 'approval'
+
+// A session left waiting this long stops waving and falls asleep.
+const SLEEP_AFTER_MS = 10 * 60 * 1000
+const TRACE_LINES = 300
+
+const flagFile = (home: string, id: string) => `${home}/.claude/crab-sessions/ask-${id}.txt`
+
+// The registry cannot tell a question or a permission prompt from a busy turn:
+// each session writes what it waits on, and every panel reads it.
+async function setFlag($: EngineInterface, kind?: Flag) {
+  try {
+    const home = (await $.env.get('HOME')) ?? ''
+    await $.fs.write(flagFile(home, await $.session.id()), kind ? `${kind}:${await $.clock.now()}` : '0')
+  } catch {
+    // a flag must never break a turn
+  }
+}
+
+async function readFlag($: EngineInterface, home: string, id: string): Promise<Flag | undefined> {
+  const kind = (await $.fs.read(flagFile(home, id)).catch(() => '0')).split(':')[0]
+
+  return kind === 'question' || kind === 'approval' ? kind : undefined
+}
+
+// Trial log of the events that set or clear the flag: ~/.claude/crab-sessions/events.log
+async function trace($: EngineInterface, name: string, detail = '') {
+  try {
+    const home = (await $.env.get('HOME')) ?? ''
+    const file = `${home}/.claude/crab-sessions/events.log`
+    const old = await $.fs.read(file).catch(() => '')
+    const at = new Date(await $.clock.now()).toISOString()
+    const line = `${at} ${(await $.session.id()).slice(0, 8)} ${name} ${detail}`.trim()
+    await $.fs.write(file, [...old.split('\n').filter(Boolean), line].slice(-TRACE_LINES).join('\n') + '\n')
+  } catch {
+    // tracing must never break a turn
+  }
+}
+
+// Drops the flag when something proves the wait is over; logs only when it had one.
+async function clearFlag($: EngineInterface, by: string) {
+  const home = (await $.env.get('HOME')) ?? ''
+  const flag = await readFlag($, home, await $.session.id())
+  if (!flag) return
+  await setFlag($)
+  await trace($, `clear(${flag})`, `by ${by}`)
+}
+
 const agentSkin = (type: string) => (/explore|fetch|search/i.test(type) ? 'research' : /plan/i.test(type) ? 'docs' : 'plain')
 
-const ORDER = { asking: 0, waiting: 1, working: 2 } as const
+const ORDER = { approval: 0, asking: 1, waiting: 2, working: 3 } as const
 
 const lastDir = (cwd: string) => cwd.split('/').filter(Boolean).pop() ?? cwd
 
@@ -111,10 +159,54 @@ function bar(percent: number, width: number): string {
 }
 
 const toneOf = (percent: number) => (percent >= 85 ? 'error' : percent >= 60 ? 'warning' : 'success')
-const stateTone = { asking: 'warning', waiting: 'subtle', working: 'success' } as const
-const stateLabel = { asking: 'Ti ha fatto una domanda', waiting: 'Fermo, ti aspetta', working: 'Sta lavorando' } as const
-const shortLabel = { asking: 'Domanda', waiting: 'Ti aspetta', working: 'Lavora' } as const
-const crabState = { asking: 'asking', waiting: 'idle', working: 'working' } as const satisfies Record<string, CrabState>
+const stateTone = { approval: 'warning', asking: 'warning', waiting: 'subtle', working: 'success' } as const
+const stateLabel = {
+  approval: 'Chiede il permesso',
+  asking: 'Ti ha fatto una domanda',
+  waiting: 'Fermo, ti aspetta',
+  working: 'Sta lavorando',
+} as const
+const shortLabel = { approval: 'Permesso', asking: 'Domanda', waiting: 'Ti aspetta', working: 'Lavora' } as const
+const crabState = (state: keyof typeof stateTone, waitedMs: number): CrabState =>
+  state === 'waiting' ? (waitedMs >= SLEEP_AFTER_MS ? 'idle' : 'waiting') : state === 'working' ? 'working' : state
+
+const LIMIT_KINDS = ['five_hour', 'seven_day']
+
+type LimitsFile = { at: number; limits: Limit[] }
+
+// An idle session's own rate limits go stale: they refresh only when that session talks to the API.
+// So each session stamps what it saw right after a turn, and the panel shows the newest one of all.
+async function saveLimits($: EngineInterface, home: string, now: number) {
+  const usage = await $.session.usage().catch(() => undefined)
+  const limits: Limit[] = (usage?.rateLimits ?? [])
+    .filter(l => LIMIT_KINDS.includes(l.kind))
+    .map(l => ({ kind: l.kind, percent: l.percentUsed, resetsAt: l.resetsAt }))
+  if (limits.length === 0) return
+  const file: LimitsFile = { at: now, limits }
+  await $.fs.write(`${home}/.claude/crab-sessions/limits-${await $.session.id()}.json`, JSON.stringify(file))
+}
+
+async function freshestLimits($: EngineInterface, home: string): Promise<Limit[]> {
+  const dir = `${home}/.claude/crab-sessions`
+  const entries = await $.fs.list(dir).catch(() => [])
+  let best: LimitsFile | undefined
+  for (const entry of entries) {
+    if (!/^limits-.+\.json$/.test(entry.name)) continue
+    try {
+      const file = JSON.parse(await $.fs.read(`${dir}/${entry.name}`)) as LimitsFile
+      if (!best || file.at > best.at) best = file
+    } catch {
+      // half-written: skipped until the next refresh
+    }
+  }
+  if (best) return best.limits
+
+  // nothing stamped yet: this session's own reading, better than nothing
+  const usage = await $.session.usage().catch(() => undefined)
+  return (usage?.rateLimits ?? [])
+    .filter(l => LIMIT_KINDS.includes(l.kind))
+    .map(l => ({ kind: l.kind, percent: l.percentUsed, resetsAt: l.resetsAt }))
+}
 
 async function refresh($: EngineInterface) {
   const home = (await $.env.get('HOME')) ?? ''
@@ -131,11 +223,8 @@ async function refresh($: EngineInterface) {
       // a registry file whose process is gone leaves no socket behind
       if (reg.messagingSocketPath && !(await $.fs.exists(reg.messagingSocketPath))) continue
       const busy = reg.status === 'busy'
-      const asked = await $.fs
-        .read(`${home}/.claude/crab-sessions/ask-${reg.sessionId}.txt`)
-        .then(text => Number(text) > 0)
-        .catch(() => false)
-      const state = busy && asked ? 'asking' : busy ? 'working' : 'waiting'
+      const flag = busy ? await readFlag($, home, reg.sessionId) : undefined
+      const state = flag === 'approval' ? 'approval' : flag === 'question' ? 'asking' : busy ? 'working' : 'waiting'
       const title = reg.name || lastDir(reg.cwd)
       rows.push({
         id: reg.sessionId,
@@ -159,10 +248,7 @@ async function refresh($: EngineInterface) {
 
   rows.sort((a, b) => ORDER[a.state] - ORDER[b.state] || a.since - b.since)
 
-  const usage = await $.session.usage().catch(() => undefined)
-  const limits: Limit[] = (usage?.rateLimits ?? [])
-    .filter(l => l.kind === 'five_hour' || l.kind === 'seven_day')
-    .map(l => ({ kind: l.kind, percent: l.percentUsed, resetsAt: l.resetsAt }))
+  const limits = await freshestLimits($, home)
 
   const next: SessionsView = { rows, limits, at: now }
   await update($, view, () => next)
@@ -172,6 +258,9 @@ export const register: Register = on => {
   let timer: { cancel: () => void } | undefined
 
   on('session.start', async ($, e, next) => {
+    // The CLI's REPL starts on the terminal surface: it gets no panel, but its turns still feed the desktop panel.
+    if (e.surface === 'terminal') return next(e)
+
     await $.command.register({ name: 'crab', description: 'Mostra il pannello delle sessioni con il granchio' })
     void $.ui.open({ id: PANE, title: 'Sessioni' })
     timer?.cancel()
@@ -207,6 +296,7 @@ export const register: Register = on => {
         since: old.since || (await $.clock.now()),
       }
       await $.fs.write(file, JSON.stringify(total))
+      await saveLimits($, home, await $.clock.now())
     } catch {
       // counting must never break a turn
     }
@@ -214,16 +304,72 @@ export const register: Register = on => {
     return result
   })
 
-  // The registry cannot tell a question from a pause: this session says it.
+  // A question for the person: the flag stands for as long as the tool waits.
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
-    const home = (await $.env.get('HOME')) ?? ''
-    const file = `${home}/.claude/crab-sessions/ask-${await $.session.id()}.txt`
-    await $.fs.write(file, String(await $.clock.now()))
+    await setFlag($, 'question')
+    await trace($, 'set(question)', 'AskUserQuestion')
     try {
       return await next(e)
     } finally {
-      await $.fs.write(file, '0')
+      await setFlag($)
     }
+  })
+
+  // A permission prompt is about to be shown.
+  on('classic.PermissionRequest', async ($, e, next) => {
+    await setFlag($, 'approval')
+    await trace($, 'set(approval)', `PermissionRequest ${e.tool_name}`)
+
+    return next(e)
+  })
+
+  // An MCP server asks the person for input.
+  on('classic.Elicitation', async ($, e, next) => {
+    await setFlag($, 'question')
+    await trace($, 'set(question)', `Elicitation ${e.mcp_server_name}`)
+
+    return next(e)
+  })
+
+  // Same signals as the engine's own notifications: a second path, and the log shows which types arrive.
+  on('classic.Notification', async ($, e, next) => {
+    await trace($, 'Notification', e.notification_type)
+    if (e.notification_type === 'permission_prompt') await setFlag($, 'approval')
+    if (e.notification_type === 'elicitation_dialog') await setFlag($, 'question')
+
+    return next(e)
+  })
+
+  // Anything that happens only after the person has answered, or the turn is over, ends the wait.
+  on('classic.PostToolUse', async ($, e, next) => {
+    await clearFlag($, `PostToolUse ${e.tool_name}`)
+
+    return next(e)
+  })
+  on('classic.PostToolUseFailure', async ($, e, next) => {
+    await clearFlag($, `PostToolUseFailure ${e.tool_name}`)
+
+    return next(e)
+  })
+  on('classic.PermissionDenied', async ($, e, next) => {
+    await clearFlag($, 'PermissionDenied')
+
+    return next(e)
+  })
+  on('classic.ElicitationResult', async ($, e, next) => {
+    await clearFlag($, `ElicitationResult ${e.action}`)
+
+    return next(e)
+  })
+  on('classic.Stop', async ($, e, next) => {
+    await clearFlag($, 'Stop')
+
+    return next(e)
+  })
+  on('classic.UserPromptSubmit', async ($, e, next) => {
+    await clearFlag($, 'UserPromptSubmit')
+
+    return next(e)
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -298,7 +444,7 @@ export const register: Register = on => {
                 <Box gap={1} alignItems="center">
                   {Svg ? (
                     <Svg
-                      source={crabSvg(row.skin, crabState[row.state])}
+                      source={crabSvg(row.skin, crabState(row.state, at - row.since))}
                       alt={stateLabel[row.state]}
                       width={44}
                       height={34}
