@@ -1,0 +1,1361 @@
+<title>Dashboard sessioni attive - 🦀</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Pixelify+Sans:wght@500;700&display=swap">
+<style>
+/* Layout: a tide-pool board. Sessions grouped by what they need from you, the ones that
+   wait on an answer first; opening one keeps the others in a rail on the left. */
+:root {
+  --bg: #e8eef1;
+  --surface: #fbfdfd;
+  --surface-2: #dbe5ea;
+  --ink: #13232b;
+  --muted: #526670;
+  --line: #c4d2d8;
+  --coral: #c4562f;
+  --coral-ink: #ffffff;
+  --work: #11796a;
+  --work-bg: #d8f0ea;
+  --ask: #a8640a;
+  --ask-bg: #fbecd2;
+  --wait: #5f727b;
+  --wait-bg: #e1e9ec;
+  --danger: #b0302c;
+  --danger-bg: #f8e0de;
+  --add-bg: #dcf3e3;
+  --add-strong: #b4e6c3;
+  --del-bg: #fbe3e1;
+  --del-strong: #f3bcb7;
+  --hunk-bg: #e2ecf7;
+  --lane0: #c4562f; --lane1: #11796a; --lane2: #3f63c4; --lane3: #a8640a; --lane4: #8a46b0; --lane5: #2f8fa8;
+  --shadow: 0 1px 0 rgba(19, 35, 43, .06), 0 6px 18px -12px rgba(19, 35, 43, .35);
+  --display: "Pixelify Sans", ui-monospace, "SF Mono", Menlo, monospace;
+  --body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d171c; --surface: #14222a; --surface-2: #1b2e36; --ink: #e1ebee; --muted: #8ea2ab; --line: #29404a;
+    --coral: #e8845e; --coral-ink: #1b0d07; --work: #3cc2a6; --work-bg: #10322c; --ask: #efb44a; --ask-bg: #392a0f;
+    --wait: #8b9ea7; --wait-bg: #1d2c33; --danger: #f17b74; --danger-bg: #3a1716;
+    --add-bg: #12301f; --add-strong: #1d5233; --del-bg: #3a1819; --del-strong: #622a2a; --hunk-bg: #1a2b3f;
+    --lane0: #e8845e; --lane1: #3cc2a6; --lane2: #7f9cf0; --lane3: #efb44a; --lane4: #c18ae0; --lane5: #5cc4dc;
+    --shadow: 0 1px 0 rgba(0, 0, 0, .3), 0 8px 22px -14px rgba(0, 0, 0, .9);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d171c; --surface: #14222a; --surface-2: #1b2e36; --ink: #e1ebee; --muted: #8ea2ab; --line: #29404a;
+  --coral: #e8845e; --coral-ink: #1b0d07; --work: #3cc2a6; --work-bg: #10322c; --ask: #efb44a; --ask-bg: #392a0f;
+  --wait: #8b9ea7; --wait-bg: #1d2c33; --danger: #f17b74; --danger-bg: #3a1716;
+  --add-bg: #12301f; --add-strong: #1d5233; --del-bg: #3a1819; --del-strong: #622a2a; --hunk-bg: #1a2b3f;
+  --lane0: #e8845e; --lane1: #3cc2a6; --lane2: #7f9cf0; --lane3: #efb44a; --lane4: #c18ae0; --lane5: #5cc4dc;
+  --shadow: 0 1px 0 rgba(0, 0, 0, .3), 0 8px 22px -14px rgba(0, 0, 0, .9);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 14px;
+  line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 40px;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
+.wrap { max-width: 1320px; margin: 0 auto; display: grid; gap: 18px; }
+.board { display: grid; gap: 18px; min-width: 0; }
+
+/* ---------- top */
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; border: 0; background: none; padding: 0; cursor: pointer; }
+.brand img { width: 52px; height: 40px; image-rendering: pixelated; }
+h1 { font-family: var(--display); font-weight: 700; font-size: 26px; letter-spacing: .5px; margin: 0; line-height: 1; }
+.live { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.live .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--wait); flex: none; }
+.live[data-state="live"] .dot { background: var(--work); animation: pulse 2.4s infinite; }
+.live[data-state="retrying"] .dot { background: var(--ask); }
+.live[data-state="offline"] .dot, .live[data-state="denied"] .dot { background: var(--danger); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--work) 55%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+/* ---------- summary */
+.summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; min-width: 0; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.tile .big { font-family: var(--display); font-size: 24px; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.counts { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+.counts b { font-family: var(--display); font-size: 24px; font-weight: 700; margin-right: 4px; }
+.meter { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--work); }
+.meter i.warn { background: var(--ask); }
+.meter i.crit { background: var(--danger); }
+
+/* ---------- notice */
+.notice { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--ask); border-radius: 10px; padding: 14px 16px; display: grid; gap: 8px; }
+.notice.bad { border-left-color: var(--danger); }
+.notice h2 { margin: 0; font-size: 15px; }
+.notice p { margin: 0; color: var(--muted); max-width: 70ch; }
+.notice pre { margin: 0; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-family: var(--mono); font-size: 12px; user-select: all; }
+.notice .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- groups and cards */
+.group { display: grid; gap: 10px; }
+.group-head { display: flex; align-items: baseline; gap: 10px; }
+.group-head h2 { font-family: var(--display); font-weight: 500; font-size: 17px; margin: 0; letter-spacing: .3px; }
+.group-head .n { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 12px; align-items: stretch; }
+
+.s-working { --state-c: var(--work); --state-bg: var(--work-bg); }
+.s-asking, .s-approval { --state-c: var(--ask); --state-bg: var(--ask-bg); }
+.s-waiting { --state-c: var(--wait); --state-bg: var(--wait-bg); }
+.s-idle { --state-c: var(--muted); --state-bg: var(--wait-bg); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); display: grid; gap: 10px; padding: 12px; min-width: 0; position: relative; }
+.card::before { content: ""; position: absolute; left: -1px; top: 12px; bottom: 12px; width: 4px; border-radius: 0 4px 4px 0; background: var(--state-c, var(--wait)); }
+.card.s-asking, .card.s-approval { border-color: color-mix(in srgb, var(--ask) 45%, var(--line)); }
+.card.s-idle::before { background: var(--line); }
+.card.is-example { opacity: .78; }
+/* cards of a row stretch to the tallest one, the buttons sit at the bottom; the agent list
+   opens in a popover, so a card never grows with it */
+.grid > .card { display: flex; flex-direction: column; gap: 10px; }
+.card-body { display: grid; gap: 8px; }
+.card-body:empty { display: none; }
+.card .actions { margin-top: auto; }
+.card .title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .agents-bar .link[aria-expanded="true"] { background: var(--surface-2); }
+
+.agent-pop { position: fixed; z-index: 20; width: min(380px, calc(100vw - 32px)); max-height: min(70vh, 520px); overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 18px 48px -16px rgba(0, 0, 0, .55); padding: 10px; display: grid; gap: 4px; }
+.agent-pop header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; align-items: start; padding: 2px 4px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; position: sticky; top: -10px; background: var(--surface); z-index: 1; padding-top: 10px; margin-top: -10px; }
+.agent-pop h3 { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.agent-pop header .sub { grid-column: 1; }
+.agent-pop .close { grid-row: 1 / 3; grid-column: 2; border: 0; background: none; font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 6px; cursor: pointer; color: var(--muted); }
+.agent-pop .close:hover { background: var(--surface-2); color: var(--ink); }
+
+.head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: center; }
+.crab { border: 0; padding: 4px; background: var(--state-bg, var(--surface-2)); border-radius: 10px; cursor: pointer; line-height: 0; }
+.crab img { width: 66px; height: 51px; image-rendering: pixelated; display: block; }
+.crab:disabled { cursor: default; }
+.who { display: grid; gap: 2px; min-width: 0; }
+.title { border: 0; background: none; padding: 0; text-align: left; font-weight: 600; font-size: 15px; line-height: 1.25; cursor: pointer; overflow-wrap: anywhere; }
+.title:hover:not(:disabled) { color: var(--coral); }
+.title:disabled { cursor: default; }
+.meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 10px; min-width: 0; }
+.meta span { overflow-wrap: anywhere; }
+.pill { justify-self: start; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--state-c); background: var(--state-bg); border-radius: 999px; padding: 2px 9px; font-variant-numeric: tabular-nums; }
+.badge { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+.numbers { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.agents { border-top: 1px dashed var(--line); padding-top: 8px; display: grid; gap: 6px; }
+.agents-bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.swim { display: flex; align-items: center; flex: none; }
+.swim img { width: 30px; height: 23px; image-rendering: pixelated; }
+.agents-bar .txt { font-size: 12px; color: var(--muted); flex: 1; min-width: 0; }
+.link { border: 0; background: none; padding: 2px 4px; color: var(--coral); font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 4px; flex: none; }
+.agent { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 2px 8px; align-items: baseline; width: 100%; border: 0; background: none; text-align: left; padding: 6px; border-radius: 8px; cursor: pointer; }
+.agent:hover { background: var(--surface-2); }
+.agent .d { width: 8px; height: 8px; border-radius: 50%; background: var(--line); align-self: center; }
+.agent.on .d { background: var(--work); }
+.agent .name { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+.agent .name small { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
+.agent .when { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.agent .step { grid-column: 2 / 4; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.tool { font-family: var(--mono); font-size: 11px; color: var(--ink); background: var(--surface-2); border-radius: 4px; padding: 0 5px; margin-right: 6px; white-space: nowrap; display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+
+.status { font-size: 12px; border-radius: 8px; padding: 6px 9px; background: var(--surface-2); color: var(--ink); overflow-wrap: anywhere; }
+.status.ok { background: var(--work-bg); }
+.status.bad { background: var(--danger-bg); }
+
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 5px 11px; font-size: 13px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.px { width: 24px; height: 24px; flex: none; shape-rendering: crispEdges; fill: currentColor; }
+.btn.ico { padding: 0; width: 34px; height: 34px; justify-content: center; position: relative; }
+.btn.back { padding: 3px 11px 3px 6px; }
+.actions { flex-wrap: nowrap; }
+/* tooltip: the button's own words, above it, opening rightwards: the buttons sit at the start of the row */
+[data-tip]::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 0; width: max-content; max-width: 190px; white-space: normal; background: var(--ink); color: var(--bg); font-size: 12px; font-weight: 500; line-height: 1.35; padding: 5px 8px; border-radius: 6px; pointer-events: none; opacity: 0; transform: translateY(2px); transition: opacity .12s, transform .12s; z-index: 4; }
+[data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transform: none; }
+.tab { display: inline-flex; align-items: center; gap: 6px; }
+.hidden-box { display: grid; gap: 6px; }
+.hidden-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; border: 1px dashed var(--line); border-radius: 999px; padding: 3px 4px 3px 12px; font-size: 12px; color: var(--muted); }
+.chip .btn { padding: 2px 8px; font-size: 12px; }
+.btn:hover:not(:disabled) { border-color: var(--ink); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.primary { background: var(--coral); color: var(--coral-ink); border-color: var(--coral); }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.06); border-color: var(--coral); }
+.btn.danger { color: var(--danger); }
+.btn.danger.primary { background: var(--danger); border-color: var(--danger); color: var(--surface); }
+
+.empty { background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; padding: 22px; color: var(--muted); text-align: center; }
+
+/* ---------- session view: rail + detail */
+.split { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 16px; align-items: start; }
+.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); display: grid; gap: 10px; max-height: calc(100vh - 32px); overflow: auto; padding-right: 2px; }
+.rail .back { justify-self: start; }
+.rail h3 { margin: 6px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.rail-list { display: grid; gap: 4px; }
+.rail-item { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 0 8px; align-items: center; text-align: left; border: 1px solid transparent; background: none; border-radius: 10px; padding: 5px 7px; cursor: pointer; }
+.rail-item:hover { background: var(--surface); border-color: var(--line); }
+.rail-item[aria-current="page"] { background: var(--surface); border-color: var(--state-c); box-shadow: var(--shadow); }
+.rail-item img { width: 34px; height: 26px; image-rendering: pixelated; grid-row: span 2; }
+.rail-item .t { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rail-item .s { font-size: 11px; color: var(--state-c); font-variant-numeric: tabular-nums; }
+
+.detail-main { display: grid; gap: 14px; min-width: 0; }
+.dhead { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; align-items: center; box-shadow: var(--shadow); }
+.dhead .crab img { width: 104px; height: 80px; }
+.dhead h2 { margin: 0; font-size: 20px; line-height: 1.2; overflow-wrap: anywhere; text-wrap: balance; }
+.dhead .who { gap: 6px; }
+.dhead .actions { grid-column: 1 / -1; }
+.dhead .status { grid-column: 1 / -1; }
+.branch { font-family: var(--mono); font-size: 12px; }
+
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tab { border: 0; background: none; padding: 8px 14px; font-weight: 600; font-size: 13px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; white-space: nowrap; }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--coral); }
+.tab .n { font-family: var(--mono); font-weight: 500; font-size: 11px; background: var(--surface-2); border-radius: 999px; padding: 0 6px; margin-left: 6px; }
+.panel { display: grid; gap: 12px; min-width: 0; }
+.box { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; min-width: 0; }
+.box h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.prompt { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; }
+.timeline li { display: grid; grid-template-columns: 62px 80px minmax(0, 1fr); gap: 8px; padding: 6px 2px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); font-size: 13px; align-items: baseline; }
+.timeline li:last-child { border-bottom: 0; }
+.timeline time { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.timeline .who-k { font-size: 11px; font-weight: 600; justify-self: start; min-width: 0; max-width: 100%; }
+.timeline .k-user { color: var(--coral); }
+.timeline .k-text { color: var(--muted); }
+.timeline .txt { overflow-wrap: anywhere; }
+.timeline li.user .txt { font-weight: 500; }
+
+/* ---------- changed files, GitHub style */
+.files-head { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; font-size: 13px; }
+.plus { color: var(--work); font-family: var(--mono); font-weight: 500; }
+.minus { color: var(--danger); font-family: var(--mono); font-weight: 500; }
+.files { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.file { border-top: 1px solid var(--line); }
+.file:first-child { border-top: 0; }
+.file-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; width: 100%; border: 0; background: none; text-align: left; padding: 8px 12px; cursor: pointer; }
+.file-row:hover { background: var(--surface-2); }
+.file-row[aria-expanded="true"] { background: var(--surface-2); }
+.fs { font-family: var(--mono); font-size: 11px; font-weight: 600; width: 20px; height: 20px; border-radius: 5px; display: grid; place-items: center; }
+.fs-added, .fs-untracked { color: var(--work); background: var(--work-bg); }
+.fs-modified { color: var(--ask); background: var(--ask-bg); }
+.fs-deleted, .fs-conflict { color: var(--danger); background: var(--danger-bg); }
+.fs-renamed { color: var(--lane2); background: var(--surface-2); }
+.fpath { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; min-width: 0; }
+.fpath .dir { color: var(--muted); }
+.fpath small { font-family: var(--body); color: var(--muted); margin-left: 6px; }
+.counts-f { font-family: var(--mono); font-size: 12px; display: flex; gap: 8px; font-variant-numeric: tabular-nums; }
+.blocks { display: inline-flex; gap: 2px; }
+.blocks i { width: 8px; height: 8px; border-radius: 1px; background: var(--surface-2); }
+.blocks i.a { background: var(--work); }
+.blocks i.r { background: var(--danger); }
+
+.diff { overflow-x: auto; border-top: 1px solid var(--line); background: var(--surface); }
+.diff table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12px; line-height: 1.55; }
+.diff td { padding: 0 8px; white-space: pre; vertical-align: top; }
+.diff td.no { width: 1%; min-width: 44px; text-align: right; color: var(--muted); user-select: none; font-variant-numeric: tabular-nums; }
+.diff td.sg { width: 1%; padding: 0 2px 0 6px; user-select: none; color: var(--muted); }
+.diff tr.add td { background: var(--add-bg); }
+.diff tr.add td.no { background: var(--add-strong); }
+.diff tr.del td { background: var(--del-bg); }
+.diff tr.del td.no { background: var(--del-strong); }
+.diff tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding-block: 3px; }
+.diff .note { padding: 10px 12px; color: var(--muted); font-size: 12px; }
+
+/* ---------- git graph */
+.graph { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow-x: auto; }
+.graph table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.graph td { padding: 0 10px 0 0; height: 28px; white-space: nowrap; vertical-align: middle; }
+.graph td.g { padding: 0 6px 0 4px; line-height: 0; }
+.graph td.subj { max-width: 560px; overflow: hidden; text-overflow: ellipsis; }
+.graph tr:hover td { background: var(--surface-2); }
+.graph tr.is-head td.subj { font-weight: 600; }
+.graph .sha { font-family: var(--mono); color: var(--muted); font-size: 11px; }
+.graph .au, .graph .tm { color: var(--muted); font-size: 12px; }
+.ref { display: inline-block; font-family: var(--mono); font-size: 10.5px; border-radius: 4px; padding: 0 5px; margin-right: 4px; border: 1px solid var(--line); color: var(--muted); }
+.ref.local { color: var(--ink); border-color: var(--lane1); background: var(--work-bg); }
+.ref.headref { color: var(--coral-ink); background: var(--coral); border-color: var(--coral); }
+.ref.tag { border-style: dashed; }
+
+/* ---------- sheets */
+dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); padding: 0; width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .5); }
+dialog::backdrop { background: rgba(8, 16, 20, .45); }
+.sheet { display: grid; gap: 12px; padding: 18px; }
+.sheet h2 { margin: 0; font-size: 17px; font-weight: 600; text-wrap: balance; }
+.sheet p { margin: 0; color: var(--muted); }
+.sheet textarea { width: 100%; min-height: 110px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); padding: 10px; font: inherit; }
+.sheet .row, .detail .row { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.detail { display: grid; gap: 12px; padding: 18px; }
+.detail header { display: grid; gap: 4px; }
+.detail header h2, .detail header p { margin: 0; }
+.kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.kv div { background: var(--bg); border-radius: 8px; padding: 6px 9px; display: grid; }
+.kv span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.kv b { font-family: var(--mono); font-weight: 500; font-size: 13px; font-variant-numeric: tabular-nums; }
+.detail details pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; background: var(--bg); border-radius: 8px; padding: 10px; margin: 6px 0 0; max-height: 220px; overflow: auto; }
+.steps { display: grid; gap: 2px; max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 6px; margin: 0; }
+.steps li { list-style: none; display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; padding: 5px 4px; border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent); font-size: 12px; }
+.steps li:last-child { border-bottom: 0; }
+.steps time { font-family: var(--mono); color: var(--muted); font-size: 11px; }
+.steps .txt { overflow-wrap: anywhere; }
+
+#toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; max-width: calc(100vw - 32px); z-index: 5; }
+
+@media (max-width: 860px) {
+  .summary { grid-template-columns: minmax(0, 1fr); }
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .rail { position: static; max-height: none; grid-template-columns: minmax(0, 1fr); }
+  .rail h3 { display: none; }
+  .rail-list { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+  .rail-item { flex: 0 0 200px; }
+  .timeline li { grid-template-columns: 52px minmax(0, 1fr); }
+  .timeline .who-k { grid-column: 2; }
+  .timeline .txt { grid-column: 2; }
+  .dhead .crab img { width: 66px; height: 51px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live[data-state="live"] .dot { animation: none; }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <button class="brand" type="button" id="home" title="Torna alla dashboard">
+      <img id="brand" alt="" src="data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%222%201%2023%2018%22%20width%3D%2292%22%20height%3D%2272%22%20shape-rendering%3D%22crispEdges%22%3E%3Cg%20visibility%3D%22hidden%22%3E%3Canimate%20attributeName%3D%22visibility%22%20calcMode%3D%22discrete%22%20dur%3D%221300ms%22%20repeatCount%3D%22indefinite%22%20keyTimes%3D%220%3B0.2923%3B1%22%20values%3D%22visible%3Bhidden%3Bhidden%22%2F%3E%3Crect%20x%3D%2224%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2223%22%20y%3D%222%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%223%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%223%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%224%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%228%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%229%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2210%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2210%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2211%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2211%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23FFFFFF%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23FFFFFF%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2214%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%2214%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2215%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2215%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2216%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2217%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2217%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2217%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2217%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2218%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2218%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2218%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%2218%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3C%2Fg%3E%3Cg%20visibility%3D%22hidden%22%3E%3Canimate%20attributeName%3D%22visibility%22%20calcMode%3D%22discrete%22%20dur%3D%221300ms%22%20repeatCount%3D%22indefinite%22%20keyTimes%3D%220%3B0.2923%3B0.5846%3B1%22%20values%3D%22hidden%3Bvisible%3Bhidden%3Bhidden%22%2F%3E%3Crect%20x%3D%2224%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2223%22%20y%3D%222%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%223%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%223%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%224%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2210%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2210%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2210%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2211%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2211%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2211%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2211%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2212%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23FFFFFF%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23FFFFFF%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2214%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%2214%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2215%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2215%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2215%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2216%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2217%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2217%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2218%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2218%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3C%2Fg%3E%3Cg%20visibility%3D%22hidden%22%3E%3Canimate%20attributeName%3D%22visibility%22%20calcMode%3D%22discrete%22%20dur%3D%221300ms%22%20repeatCount%3D%22indefinite%22%20keyTimes%3D%220%3B0.5846%3B0.8769%3B1%22%20values%3D%22hidden%3Bvisible%3Bhidden%3Bhidden%22%2F%3E%3Crect%20x%3D%2224%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2223%22%20y%3D%222%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%223%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%223%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%224%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%227%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%228%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%228%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%229%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%229%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2210%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2210%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2211%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2211%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23FFFFFF%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23FFFFFF%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2212%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2214%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%2214%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2215%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2215%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2216%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2217%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2217%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2217%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2217%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2218%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2218%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2218%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%2218%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3C%2Fg%3E%3Cg%20visibility%3D%22hidden%22%3E%3Canimate%20attributeName%3D%22visibility%22%20calcMode%3D%22discrete%22%20dur%3D%221300ms%22%20repeatCount%3D%22indefinite%22%20keyTimes%3D%220%3B0.8769%3B1%22%20values%3D%22hidden%3Bvisible%3Bvisible%22%2F%3E%3Crect%20x%3D%2224%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2223%22%20y%3D%222%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%223%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%223%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%224%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%225%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%235BE08A%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2210%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2210%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2210%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2211%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2211%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%2211%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2211%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%223%22%20y%3D%2212%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2212%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2212%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2214%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%232A1A14%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2221%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%2222%22%20y%3D%2213%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2214%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23F0A184%22%2F%3E%3Crect%20x%3D%2217%22%20y%3D%2214%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2219%22%20y%3D%2214%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%2214%22%20width%3D%223%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%2215%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%228%22%20y%3D%2215%22%20width%3D%2210%22%20height%3D%221%22%20fill%3D%22%23D97757%22%2F%3E%3Crect%20x%3D%2218%22%20y%3D%2215%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%2215%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2216%22%20width%3D%228%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%2217%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%2217%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%2217%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%2218%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2212%22%20y%3D%2218%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3Crect%20x%3D%2216%22%20y%3D%2218%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22%23A94E34%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E">
+      <h1>Crab Sessions</h1>
+    </button>
+    <div class="live" id="live" data-state="connecting" role="status" aria-live="polite">
+      <span class="dot"></span><span id="liveText">Collegamento al server locale…</span>
+    </div>
+  </header>
+
+  <section class="summary" id="summary" aria-label="Riepilogo">
+    <div class="tile">
+      <span class="label">Sessioni</span>
+      <div class="counts" id="counts"><span><b>–</b>ti aspettano</span><span><b>–</b>lavorano</span></div>
+      <span class="sub" id="agentsCount">Agenti al lavoro: –</span>
+    </div>
+    <div class="tile" id="limit-five_hour"></div>
+    <div class="tile" id="limit-seven_day"></div>
+  </section>
+
+  <section id="notice" class="notice" hidden></section>
+
+  <div id="board" class="board"></div>
+</div>
+
+<dialog id="sheet"><form method="dialog" class="sheet" id="sheetForm"></form></dialog>
+<dialog id="agentSheet"><div class="detail" id="agentDetail"></div></dialog>
+<div id="agentPop" class="agent-pop" role="dialog" aria-label="Agenti della sessione" hidden></div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+'use strict'
+const SERVER = 'host:crab-sessions'
+// one long poll at a time, never two closer than this: the app allows 30 calls a minute per page
+const MIN_GAP_MS = 3000
+
+const GROUPS = [
+  { key: 'answer', title: 'Serve una tua risposta', states: ['approval', 'asking'] },
+  { key: 'waiting', title: 'Ti aspettano', states: ['waiting'] },
+  { key: 'working', title: 'Al lavoro', states: ['working'] },
+]
+const SHORT = { approval: 'Chiede il permesso', asking: 'Ti ha fatto una domanda', waiting: 'Ti aspetta', idle: 'Dorme', working: 'Lavora' }
+const ACTION_LABEL = {
+  compact: { queued: 'Compattazione in coda…', running: 'Compattazione in corso…', done: 'Conversazione compattata' },
+  clear: { queued: 'Pulizia in coda…', running: 'Pulizia in corso…', done: 'Conversazione pulita' },
+  split: { queued: 'Copia in coda…', running: 'Avvio della copia…', done: 'Copia avviata' },
+  archive: { queued: 'Archiviazione in coda…', running: 'Archiviazione in corso…', done: 'Archiviata' },
+}
+
+// Pixel-art icons on a 12×12 grid, one [x, y, w, h] per block, drawn in the text colour.
+const ICONS = {
+  open: [[0,3,5,1],[0,3,1,9],[0,11,9,1],[8,7,1,5],[6,0,6,1],[11,0,1,6],[10,1,1,1],[9,2,1,1],[8,3,1,1],[7,4,1,1],[6,5,1,1],[9,1,1,1],[10,2,1,1]],
+  compact: [[5,0,2,2],[3,2,6,1],[4,3,4,1],[1,5,10,1],[1,6,10,1],[4,8,4,1],[3,9,6,1],[5,10,2,2]],
+  clear: [[5,0,2,6],[2,6,8,2],[2,8,1,4],[4,8,1,3],[7,8,1,3],[9,8,1,4]],
+  split: [[0,0,3,1],[0,1,1,2],[9,0,3,1],[11,1,1,2],[1,1,2,1],[2,2,2,1],[3,3,2,1],[4,4,2,1],[9,1,2,1],[8,2,2,1],[7,3,2,1],[6,4,2,1],[5,5,2,7]],
+  archive: [[0,1,12,3],[1,4,1,8],[10,4,1,8],[1,11,10,1],[4,6,4,1]],
+  hide: [[3,3,6,1],[1,4,2,1],[9,4,2,1],[0,5,1,2],[11,5,1,2],[1,7,2,1],[9,7,2,1],[3,8,6,1],[5,5,2,2],[0,0,1,1],[1,1,1,1],[2,2,1,1],[9,9,1,1],[10,10,1,1],[11,11,1,1]],
+  show: [[3,3,6,1],[1,4,2,1],[9,4,2,1],[0,5,1,2],[11,5,1,2],[1,7,2,1],[9,7,2,1],[3,8,6,1],[5,5,2,2]],
+  back: [[0,5,1,2],[1,4,1,4],[2,3,1,6],[3,2,1,8],[4,5,8,2]],
+  run: [[1,2,2,2],[3,4,2,2],[1,6,2,2],[6,9,5,2]],
+  changes: [[2,0,2,6],[0,2,6,2],[6,9,6,2]],
+  graph: [[2,0,2,12],[1,8,4,3],[8,0,2,4],[7,4,2,1],[6,5,2,1],[5,6,2,1],[4,7,2,1],[7,1,4,2]],
+}
+// The generated set (artifact/icons/icons.json), when there is one: [x, y, width, colour] per run.
+const ICON_ART = /*ICON_ART*/{"grid":24,"icons":{"open":[[16,0,8,"#080008"],[15,1,2,"#080008"],[17,1,5,"#81857f"],[22,1,1,"#384964"],[23,1,1,"#080008"],[15,2,3,"#080008"],[18,2,1,"#384964"],[19,2,3,"#98b28c"],[22,2,1,"#384964"],[23,2,1,"#080008"],[2,3,16,"#080008"],[18,3,1,"#81857f"],[19,3,2,"#98b28c"],[21,3,1,"#81857f"],[22,3,1,"#384964"],[23,3,1,"#080008"],[1,4,1,"#080008"],[2,4,14,"#384964"],[16,4,1,"#080008"],[17,4,1,"#81857f"],[18,4,1,"#98b28c"],[19,4,1,"#81857f"],[20,4,1,"#384964"],[21,4,1,"#81857f"],[22,4,1,"#384964"],[23,4,1,"#080008"],[0,5,1,"#080008"],[1,5,2,"#384964"],[3,5,10,"#81857f"],[13,5,4,"#384964"],[17,5,1,"#98b28c"],[18,5,1,"#81857f"],[19,5,1,"#080008"],[20,5,1,"#384964"],[21,5,1,"#81857f"],[22,5,1,"#384964"],[23,5,1,"#080008"],[0,6,1,"#080008"],[1,6,13,"#384964"],[14,6,1,"#080008"],[15,6,1,"#384964"],[16,6,2,"#98b28c"],[18,6,1,"#384964"],[19,6,2,"#080008"],[21,6,2,"#384964"],[23,6,1,"#080008"],[0,7,1,"#080008"],[1,7,1,"#384964"],[2,7,6,"#81857f"],[8,7,7,"#384964"],[15,7,2,"#98b28c"],[17,7,1,"#384964"],[18,7,1,"#080008"],[19,7,1,"#384964"],[20,7,4,"#080008"],[0,8,1,"#080008"],[1,8,1,"#81857f"],[2,8,11,"#98b28c"],[13,8,2,"#384964"],[15,8,1,"#81857f"],[16,8,1,"#384964"],[17,8,1,"#080008"],[18,8,1,"#384964"],[19,8,2,"#98b28c"],[21,8,1,"#81857f"],[22,8,1,"#080008"],[0,9,1,"#080008"],[1,9,12,"#81857f"],[13,9,1,"#384964"],[14,9,3,"#080008"],[17,9,1,"#384964"],[18,9,1,"#81857f"],[19,9,1,"#384964"],[20,9,2,"#81857f"],[22,9,1,"#080008"],[0,10,1,"#080008"],[1,10,2,"#81857f"],[3,10,1,"#98b28c"],[4,10,9,"#e0effc"],[13,10,1,"#dceef6"],[14,10,3,"#81857f"],[17,10,1,"#98b28c"],[18,10,1,"#e0effc"],[19,10,1,"#98b28c"],[20,10,2,"#81857f"],[22,10,1,"#080008"],[0,11,1,"#080008"],[1,11,2,"#81857f"],[3,11,1,"#98b28c"],[4,11,15,"#e0effc"],[19,11,3,"#81857f"],[22,11,1,"#080008"],[0,12,1,"#080008"],[1,12,2,"#81857f"],[3,12,1,"#98b28c"],[4,12,15,"#e0effc"],[19,12,3,"#81857f"],[22,12,1,"#080008"],[0,13,1,"#080008"],[1,13,2,"#81857f"],[3,13,1,"#98b28c"],[4,13,15,"#e0effc"],[19,13,3,"#81857f"],[22,13,1,"#080008"],[0,14,1,"#080008"],[1,14,2,"#81857f"],[3,14,1,"#98b28c"],[4,14,15,"#e0effc"],[19,14,3,"#81857f"],[22,14,1,"#080008"],[0,15,1,"#080008"],[1,15,2,"#81857f"],[3,15,1,"#98b28c"],[4,15,15,"#e0effc"],[19,15,3,"#81857f"],[22,15,1,"#080008"],[0,16,1,"#080008"],[1,16,2,"#81857f"],[3,16,1,"#98b28c"],[4,16,15,"#e0effc"],[19,16,3,"#81857f"],[22,16,1,"#080008"],[0,17,1,"#080008"],[1,17,2,"#81857f"],[3,17,1,"#98b28c"],[4,17,15,"#e0effc"],[19,17,3,"#81857f"],[22,17,1,"#080008"],[0,18,1,"#080008"],[1,18,2,"#81857f"],[3,18,1,"#98b28c"],[4,18,15,"#e0effc"],[19,18,3,"#81857f"],[22,18,1,"#080008"],[0,19,1,"#080008"],[1,19,2,"#81857f"],[3,19,1,"#98b28c"],[4,19,15,"#e0effc"],[19,19,3,"#81857f"],[22,19,1,"#080008"],[0,20,1,"#080008"],[1,20,2,"#81857f"],[3,20,17,"#384964"],[20,20,2,"#81857f"],[22,20,1,"#080008"],[0,21,1,"#080008"],[1,21,1,"#81857f"],[2,21,1,"#dceef6"],[3,21,7,"#98b28c"],[10,21,1,"#dceef6"],[11,21,1,"#98b28c"],[12,21,1,"#dceef6"],[13,21,8,"#98b28c"],[21,21,1,"#384964"],[22,21,1,"#080008"],[0,22,2,"#080008"],[2,22,18,"#81857f"],[20,22,1,"#384964"],[21,22,2,"#080008"],[0,23,22,"#080008"]],"compact":[[10,1,1,"#310034"],[11,1,2,"#1b011b"],[13,1,1,"#310034"],[10,2,1,"#1b011b"],[11,2,2,"#c5b924"],[13,2,1,"#1b011b"],[10,3,1,"#1b011b"],[11,3,2,"#c5b924"],[13,3,1,"#1b011b"],[9,4,1,"#1b011b"],[10,4,1,"#000000"],[11,4,2,"#c5b924"],[13,4,2,"#1b011b"],[9,5,1,"#30251b"],[10,5,4,"#c5b924"],[14,5,1,"#30251b"],[9,6,1,"#1b011b"],[10,6,1,"#30251b"],[11,6,2,"#c5b924"],[13,6,1,"#30251b"],[14,6,1,"#1b011b"],[10,7,1,"#1b011b"],[11,7,2,"#30251b"],[13,7,1,"#1b011b"],[11,8,1,"#000000"],[12,8,1,"#1b011b"],[2,9,2,"#30251b"],[6,9,1,"#1b011b"],[7,9,9,"#72705e"],[16,9,1,"#30251b"],[17,9,1,"#1b011b"],[20,9,2,"#30251b"],[1,10,1,"#1b011b"],[2,10,1,"#72705e"],[3,10,1,"#c5b924"],[4,10,2,"#1b011b"],[6,10,11,"#72705e"],[17,10,1,"#30251b"],[18,10,2,"#1b011b"],[20,10,1,"#c5b924"],[21,10,1,"#30251b"],[22,10,1,"#1b011b"],[0,11,1,"#30251b"],[1,11,4,"#c5b924"],[5,11,1,"#30251b"],[6,11,11,"#72705e"],[17,11,2,"#30251b"],[19,11,4,"#c5b924"],[23,11,1,"#1b011b"],[0,12,1,"#30251b"],[1,12,4,"#c5b924"],[5,12,1,"#30251b"],[6,12,11,"#72705e"],[17,12,2,"#30251b"],[19,12,4,"#c5b924"],[23,12,1,"#30251b"],[0,13,1,"#1b011b"],[1,13,1,"#000000"],[2,13,1,"#72705e"],[3,13,1,"#c5b924"],[4,13,1,"#30251b"],[5,13,1,"#000000"],[6,13,11,"#72705e"],[17,13,1,"#30251b"],[18,13,1,"#1b011b"],[19,13,1,"#30251b"],[20,13,1,"#c5b924"],[21,13,1,"#30251b"],[22,13,1,"#000000"],[23,13,1,"#1b011b"],[2,14,2,"#30251b"],[4,14,1,"#1b011b"],[6,14,1,"#000000"],[7,14,10,"#30251b"],[17,14,1,"#000000"],[19,14,1,"#1b011b"],[20,14,2,"#30251b"],[2,15,1,"#000000"],[3,15,1,"#1b011b"],[6,15,5,"#1b011b"],[11,15,2,"#000000"],[13,15,4,"#1b011b"],[20,15,2,"#000000"],[11,16,2,"#30251b"],[10,17,1,"#30251b"],[11,17,2,"#c5b924"],[13,17,1,"#30251b"],[9,18,1,"#30251b"],[10,18,4,"#c5b924"],[14,18,1,"#30251b"],[9,19,1,"#000000"],[10,19,1,"#30251b"],[11,19,2,"#c5b924"],[13,19,1,"#30251b"],[14,19,1,"#000000"],[10,20,1,"#1b011b"],[11,20,2,"#c5b924"],[13,20,1,"#1b011b"],[10,21,1,"#1b011b"],[11,21,2,"#c5b924"],[13,21,1,"#1b011b"],[10,22,1,"#1b011b"],[11,22,1,"#000000"],[12,22,1,"#1b011b"]],"clear":[[13,0,8,"#000000"],[21,0,1,"#2d0429"],[12,1,1,"#2d0429"],[13,1,7,"#f16ca6"],[20,1,1,"#a02d56"],[21,1,2,"#000000"],[11,2,1,"#2d0429"],[12,2,1,"#a02d56"],[13,2,7,"#f16ca6"],[20,2,1,"#e55591"],[21,2,2,"#000000"],[10,3,2,"#2d0429"],[12,3,2,"#f16ca6"],[14,3,1,"#e2d0c5"],[15,3,6,"#f16ca6"],[21,3,1,"#e55591"],[22,3,1,"#2d0429"],[23,3,1,"#000000"],[9,4,1,"#2d0429"],[10,4,1,"#a02d56"],[11,4,2,"#f16ca6"],[13,4,1,"#e2d0c5"],[14,4,6,"#f16ca6"],[20,4,1,"#e55591"],[21,4,2,"#a02d56"],[23,4,1,"#000000"],[8,5,1,"#2d0429"],[9,5,1,"#a02d56"],[10,5,2,"#f16ca6"],[12,5,1,"#e2d0c5"],[13,5,6,"#f16ca6"],[19,5,1,"#e55591"],[20,5,3,"#a02d56"],[23,5,1,"#000000"],[7,6,1,"#2d0429"],[8,6,1,"#a02d56"],[9,6,10,"#f16ca6"],[19,6,4,"#a02d56"],[23,6,1,"#000000"],[6,7,1,"#2d0429"],[7,7,1,"#a02d56"],[8,7,10,"#f16ca6"],[18,7,5,"#a02d56"],[23,7,1,"#000000"],[5,8,2,"#2d0429"],[7,8,10,"#f16ca6"],[17,8,6,"#a02d56"],[23,8,1,"#000000"],[4,9,1,"#000000"],[5,9,1,"#2d0429"],[6,9,10,"#f16ca6"],[16,9,6,"#a02d56"],[22,9,2,"#000000"],[3,10,2,"#2d0429"],[5,10,1,"#e55591"],[6,10,9,"#f16ca6"],[15,10,6,"#a02d56"],[21,10,1,"#2d0429"],[22,10,1,"#000000"],[2,11,2,"#2d0429"],[4,11,1,"#e55591"],[5,11,9,"#f16ca6"],[14,11,1,"#e55591"],[15,11,5,"#a02d56"],[20,11,2,"#2d0429"],[1,12,2,"#2d0429"],[3,12,1,"#e55591"],[4,12,9,"#f16ca6"],[13,12,1,"#e55591"],[14,12,5,"#a02d56"],[19,12,2,"#2d0429"],[1,13,1,"#2d0429"],[2,13,1,"#a02d56"],[3,13,1,"#f16ca6"],[4,13,3,"#e55591"],[7,13,5,"#f16ca6"],[12,13,1,"#e55591"],[13,13,5,"#a02d56"],[18,13,2,"#2d0429"],[1,14,1,"#000000"],[2,14,2,"#e2d0c5"],[4,14,3,"#f16ca6"],[7,14,5,"#e55591"],[12,14,1,"#a02d56"],[13,14,1,"#e55591"],[14,14,3,"#a02d56"],[17,14,1,"#2d0429"],[18,14,1,"#000000"],[0,15,1,"#2d0429"],[1,15,6,"#e2d0c5"],[7,15,3,"#f16ca6"],[10,15,1,"#e55591"],[11,15,2,"#a02d56"],[13,15,3,"#e55591"],[16,15,1,"#2d0429"],[17,15,1,"#000000"],[0,16,1,"#2d0429"],[1,16,10,"#e2d0c5"],[11,16,3,"#a02d56"],[14,16,1,"#e55591"],[15,16,2,"#2d0429"],[0,17,1,"#2d0429"],[1,17,9,"#e2d0c5"],[10,17,1,"#e55591"],[11,17,4,"#a02d56"],[15,17,1,"#000000"],[0,18,1,"#2d0429"],[1,18,9,"#e2d0c5"],[10,18,1,"#e55591"],[11,18,3,"#a02d56"],[14,18,1,"#000000"],[0,19,1,"#2d0429"],[1,19,8,"#e2d0c5"],[9,19,1,"#f16ca6"],[10,19,1,"#e55591"],[11,19,2,"#a02d56"],[13,19,1,"#000000"],[0,20,1,"#2d0429"],[1,20,8,"#e2d0c5"],[9,20,2,"#f16ca6"],[11,20,1,"#a02d56"],[12,20,1,"#000000"],[1,21,1,"#2d0429"],[2,21,2,"#000000"],[4,21,5,"#e2d0c5"],[9,21,1,"#a02d56"],[10,21,1,"#2d0429"],[11,21,1,"#000000"],[4,22,1,"#000000"],[5,22,1,"#2d0429"],[6,22,1,"#000000"],[7,22,2,"#e2d0c5"],[9,22,1,"#a02d56"],[10,22,1,"#000000"],[6,23,1,"#2d0429"],[7,23,4,"#000000"]],"split":[[0,0,1,"#160116"],[1,0,5,"#000000"],[18,0,5,"#000000"],[23,0,1,"#160116"],[0,1,1,"#000000"],[1,1,4,"#b39520"],[5,1,1,"#442b18"],[6,1,1,"#000000"],[7,1,1,"#230024"],[16,1,1,"#160116"],[17,1,1,"#000000"],[18,1,1,"#442b18"],[19,1,4,"#b39520"],[23,1,1,"#160116"],[0,2,1,"#160116"],[1,2,4,"#fad02d"],[5,2,2,"#b39520"],[7,2,1,"#160116"],[16,2,1,"#160116"],[17,2,2,"#b39520"],[19,2,4,"#fad02d"],[23,2,1,"#000000"],[0,3,1,"#160116"],[1,3,4,"#fad02d"],[5,3,1,"#b39520"],[6,3,1,"#442b18"],[7,3,1,"#160116"],[16,3,1,"#160116"],[17,3,2,"#b39520"],[19,3,4,"#fad02d"],[23,3,1,"#000000"],[0,4,1,"#160116"],[1,4,4,"#fad02d"],[5,4,1,"#b39520"],[6,4,1,"#160116"],[16,4,1,"#230024"],[17,4,1,"#160116"],[18,4,1,"#b39520"],[19,4,4,"#fad02d"],[23,4,1,"#160116"],[0,5,1,"#000000"],[1,5,1,"#fad02d"],[2,5,2,"#b39520"],[4,5,2,"#fad02d"],[6,5,1,"#b39520"],[7,5,1,"#442b18"],[16,5,1,"#442b18"],[17,5,1,"#b39520"],[18,5,2,"#fad02d"],[20,5,2,"#b39520"],[22,5,1,"#fad02d"],[23,5,1,"#160116"],[0,6,1,"#160116"],[1,6,1,"#b39520"],[2,6,2,"#442b18"],[4,6,1,"#b39520"],[5,6,2,"#fad02d"],[7,6,1,"#b39520"],[8,6,1,"#442b18"],[15,6,1,"#442b18"],[16,6,1,"#b39520"],[17,6,2,"#fad02d"],[19,6,1,"#b39520"],[20,6,1,"#160116"],[21,6,1,"#442b18"],[22,6,1,"#b39520"],[23,6,1,"#160116"],[0,7,1,"#160116"],[1,7,2,"#000000"],[3,7,1,"#160116"],[4,7,1,"#442b18"],[5,7,1,"#b39520"],[6,7,2,"#fad02d"],[8,7,1,"#b39520"],[9,7,1,"#442b18"],[14,7,1,"#160116"],[15,7,1,"#b39520"],[16,7,2,"#fad02d"],[18,7,1,"#b39520"],[19,7,1,"#442b18"],[20,7,1,"#160116"],[21,7,2,"#000000"],[23,7,1,"#160116"],[1,8,2,"#230024"],[4,8,1,"#160116"],[5,8,1,"#442b18"],[6,8,3,"#fad02d"],[9,8,1,"#b39520"],[10,8,1,"#160116"],[13,8,1,"#160116"],[14,8,1,"#b39520"],[15,8,3,"#fad02d"],[18,8,1,"#442b18"],[19,8,1,"#160116"],[21,8,2,"#230024"],[5,9,1,"#000000"],[6,9,1,"#442b18"],[7,9,3,"#fad02d"],[10,9,1,"#b39520"],[11,9,2,"#160116"],[13,9,1,"#b39520"],[14,9,2,"#fad02d"],[16,9,1,"#b39520"],[17,9,1,"#442b18"],[18,9,1,"#160116"],[6,10,1,"#160116"],[7,10,1,"#442b18"],[8,10,3,"#fad02d"],[11,10,2,"#b39520"],[13,10,2,"#fad02d"],[15,10,1,"#b39520"],[16,10,1,"#442b18"],[17,10,1,"#160116"],[7,11,1,"#160116"],[8,11,1,"#442b18"],[9,11,5,"#fad02d"],[14,11,1,"#b39520"],[15,11,1,"#442b18"],[16,11,1,"#000000"],[8,12,1,"#160116"],[9,12,1,"#442b18"],[10,12,1,"#b39520"],[11,12,2,"#fad02d"],[13,12,1,"#b39520"],[14,12,1,"#442b18"],[15,12,1,"#160116"],[9,13,1,"#160116"],[10,13,1,"#b39520"],[11,13,2,"#fad02d"],[13,13,1,"#b39520"],[14,13,1,"#160116"],[9,14,1,"#230024"],[10,14,1,"#b39520"],[11,14,2,"#fad02d"],[13,14,1,"#442b18"],[14,14,1,"#230024"],[9,15,1,"#160116"],[10,15,1,"#b39520"],[11,15,2,"#fad02d"],[13,15,1,"#442b18"],[14,15,1,"#230024"],[9,16,1,"#160116"],[10,16,1,"#b39520"],[11,16,2,"#fad02d"],[13,16,1,"#442b18"],[14,16,1,"#230024"],[9,17,1,"#160116"],[10,17,1,"#b39520"],[11,17,2,"#fad02d"],[13,17,1,"#442b18"],[14,17,1,"#230024"],[9,18,1,"#160116"],[10,18,1,"#b39520"],[11,18,2,"#fad02d"],[13,18,1,"#442b18"],[14,18,1,"#230024"],[9,19,1,"#160116"],[10,19,1,"#b39520"],[11,19,2,"#fad02d"],[13,19,1,"#442b18"],[14,19,1,"#230024"],[9,20,1,"#160116"],[10,20,1,"#b39520"],[11,20,2,"#fad02d"],[13,20,1,"#442b18"],[14,20,1,"#230024"],[9,21,1,"#160116"],[10,21,1,"#b39520"],[11,21,2,"#fad02d"],[13,21,1,"#442b18"],[14,21,1,"#230024"],[9,22,1,"#230024"],[10,22,1,"#442b18"],[11,22,2,"#b39520"],[13,22,1,"#442b18"],[14,22,1,"#230024"],[9,23,1,"#230024"],[10,23,4,"#160116"],[14,23,1,"#230024"]],"archive":[[3,1,18,"#100210"],[2,2,1,"#100210"],[3,2,3,"#352413"],[6,2,1,"#1c110d"],[7,2,10,"#352413"],[17,2,2,"#1c110d"],[19,2,1,"#6c4620"],[20,2,1,"#352413"],[21,2,1,"#100210"],[1,3,1,"#100210"],[2,3,1,"#352413"],[3,3,1,"#989897"],[4,3,1,"#7c5a33"],[5,3,1,"#1c110d"],[6,3,1,"#352413"],[7,3,10,"#6c4620"],[17,3,1,"#352413"],[18,3,1,"#1c110d"],[19,3,2,"#989897"],[21,3,1,"#6c4620"],[22,3,1,"#100210"],[1,4,1,"#1c110d"],[2,4,1,"#7c5a33"],[3,4,1,"#989897"],[4,4,2,"#352413"],[6,4,1,"#6c4620"],[7,4,1,"#7c5a33"],[8,4,7,"#6c4620"],[15,4,1,"#7c5a33"],[16,4,2,"#6c4620"],[18,4,2,"#352413"],[20,4,1,"#989897"],[21,4,1,"#7c5a33"],[22,4,1,"#352413"],[0,5,1,"#100210"],[1,5,1,"#6c4620"],[2,5,1,"#989897"],[3,5,1,"#7c5a33"],[4,5,1,"#1c110d"],[5,5,1,"#6c4620"],[6,5,12,"#7c5a33"],[18,5,1,"#6c4620"],[19,5,1,"#1c110d"],[20,5,2,"#989897"],[22,5,1,"#7c5a33"],[23,5,1,"#100210"],[0,6,1,"#100210"],[1,6,1,"#7c5a33"],[2,6,2,"#989897"],[4,6,1,"#352413"],[5,6,14,"#6c4620"],[19,6,1,"#352413"],[20,6,2,"#989897"],[22,6,1,"#7c5a33"],[23,6,1,"#100210"],[0,7,1,"#100210"],[1,7,1,"#7c5a33"],[2,7,2,"#989897"],[4,7,1,"#352413"],[5,7,1,"#6c4620"],[6,7,12,"#7c5a33"],[18,7,1,"#6c4620"],[19,7,1,"#352413"],[20,7,2,"#989897"],[22,7,1,"#7c5a33"],[23,7,1,"#100210"],[0,8,1,"#100210"],[1,8,1,"#7c5a33"],[2,8,1,"#989897"],[3,8,1,"#7c5a33"],[4,8,1,"#352413"],[5,8,1,"#6c4620"],[6,8,3,"#7c5a33"],[9,8,1,"#6c4620"],[10,8,4,"#1c110d"],[14,8,1,"#6c4620"],[15,8,3,"#7c5a33"],[18,8,1,"#6c4620"],[19,8,1,"#352413"],[20,8,1,"#7c5a33"],[21,8,1,"#989897"],[22,8,1,"#7c5a33"],[23,8,1,"#100210"],[0,9,1,"#100210"],[1,9,1,"#6c4620"],[2,9,1,"#989897"],[3,9,1,"#6c4620"],[4,9,1,"#352413"],[5,9,4,"#6c4620"],[9,9,1,"#100210"],[10,9,1,"#6c4620"],[11,9,2,"#989897"],[13,9,1,"#352413"],[14,9,1,"#1c110d"],[15,9,4,"#6c4620"],[19,9,1,"#352413"],[20,9,1,"#6c4620"],[21,9,1,"#989897"],[22,9,1,"#6c4620"],[23,9,1,"#100210"],[0,10,1,"#100210"],[1,10,1,"#1c110d"],[2,10,1,"#352413"],[3,10,6,"#1c110d"],[9,10,1,"#352413"],[10,10,4,"#989897"],[14,10,9,"#1c110d"],[23,10,1,"#100210"],[0,11,1,"#1c110d"],[1,11,8,"#989897"],[9,11,1,"#352413"],[10,11,1,"#989897"],[11,11,2,"#100210"],[13,11,1,"#989897"],[14,11,1,"#100210"],[15,11,8,"#989897"],[23,11,1,"#1c110d"],[0,12,1,"#100210"],[1,12,3,"#7c5a33"],[4,12,2,"#989897"],[6,12,3,"#7c5a33"],[9,12,1,"#352413"],[10,12,1,"#989897"],[11,12,2,"#100210"],[13,12,1,"#989897"],[14,12,1,"#100210"],[15,12,3,"#7c5a33"],[18,12,2,"#989897"],[20,12,3,"#7c5a33"],[23,12,1,"#100210"],[0,13,1,"#100210"],[1,13,1,"#1c110d"],[2,13,1,"#352413"],[3,13,1,"#1c110d"],[4,13,1,"#100210"],[5,13,4,"#1c110d"],[9,13,1,"#352413"],[10,13,1,"#989897"],[11,13,2,"#100210"],[13,13,1,"#989897"],[14,13,1,"#100210"],[15,13,4,"#1c110d"],[19,13,1,"#100210"],[20,13,1,"#1c110d"],[21,13,1,"#352413"],[22,13,1,"#1c110d"],[23,13,1,"#100210"],[0,14,1,"#100210"],[1,14,1,"#6c4620"],[2,14,1,"#989897"],[3,14,1,"#7c5a33"],[4,14,1,"#352413"],[5,14,3,"#6c4620"],[8,14,1,"#352413"],[9,14,1,"#1c110d"],[10,14,3,"#989897"],[13,14,1,"#7c5a33"],[14,14,1,"#100210"],[15,14,4,"#6c4620"],[19,14,1,"#352413"],[20,14,1,"#7c5a33"],[21,14,1,"#989897"],[22,14,1,"#7c5a33"],[23,14,1,"#100210"],[0,15,1,"#100210"],[1,15,1,"#7c5a33"],[2,15,1,"#989897"],[3,15,1,"#7c5a33"],[4,15,1,"#352413"],[5,15,4,"#6c4620"],[9,15,2,"#352413"],[11,15,2,"#6c4620"],[13,15,2,"#1c110d"],[15,15,4,"#6c4620"],[19,15,1,"#352413"],[20,15,1,"#7c5a33"],[21,15,1,"#989897"],[22,15,1,"#7c5a33"],[23,15,1,"#100210"],[0,16,1,"#100210"],[1,16,1,"#7c5a33"],[2,16,1,"#989897"],[3,16,1,"#7c5a33"],[4,16,1,"#352413"],[5,16,4,"#7c5a33"],[9,16,1,"#6c4620"],[10,16,4,"#352413"],[14,16,1,"#6c4620"],[15,16,3,"#7c5a33"],[18,16,1,"#6c4620"],[19,16,1,"#352413"],[20,16,1,"#7c5a33"],[21,16,1,"#989897"],[22,16,1,"#7c5a33"],[23,16,1,"#100210"],[0,17,1,"#100210"],[1,17,1,"#7c5a33"],[2,17,1,"#989897"],[3,17,1,"#7c5a33"],[4,17,1,"#352413"],[5,17,14,"#6c4620"],[19,17,1,"#352413"],[20,17,1,"#7c5a33"],[21,17,1,"#989897"],[22,17,1,"#7c5a33"],[23,17,1,"#100210"],[0,18,1,"#100210"],[1,18,1,"#6c4620"],[2,18,1,"#989897"],[3,18,1,"#6c4620"],[4,18,1,"#352413"],[5,18,14,"#6c4620"],[19,18,1,"#352413"],[20,18,1,"#7c5a33"],[21,18,1,"#989897"],[22,18,1,"#7c5a33"],[23,18,1,"#100210"],[0,19,1,"#100210"],[1,19,1,"#6c4620"],[2,19,1,"#989897"],[3,19,1,"#6c4620"],[4,19,1,"#352413"],[5,19,1,"#6c4620"],[6,19,12,"#7c5a33"],[18,19,1,"#6c4620"],[19,19,1,"#352413"],[20,19,1,"#7c5a33"],[21,19,1,"#989897"],[22,19,1,"#7c5a33"],[23,19,1,"#100210"],[0,20,1,"#100210"],[1,20,1,"#6c4620"],[2,20,1,"#989897"],[3,20,1,"#6c4620"],[4,20,1,"#352413"],[5,20,14,"#6c4620"],[19,20,1,"#352413"],[20,20,1,"#6c4620"],[21,20,1,"#989897"],[22,20,1,"#6c4620"],[23,20,1,"#1c110d"],[0,21,1,"#100210"],[1,21,2,"#352413"],[3,21,18,"#1c110d"],[21,21,2,"#352413"],[23,21,1,"#100210"]],"hide":[[2,2,4,"#160610"],[2,3,1,"#160610"],[3,3,2,"#a51317"],[5,3,1,"#160610"],[6,3,1,"#000000"],[2,4,1,"#000000"],[3,4,3,"#a51317"],[6,4,2,"#160610"],[3,5,1,"#000000"],[4,5,3,"#a51317"],[7,5,2,"#160610"],[9,5,7,"#000000"],[4,6,1,"#160610"],[5,6,3,"#a51317"],[8,6,1,"#3e0040"],[9,6,1,"#000000"],[10,6,5,"#68615d"],[15,6,1,"#000000"],[16,6,2,"#160610"],[4,7,1,"#160610"],[5,7,1,"#000000"],[6,7,4,"#a51317"],[10,7,1,"#160610"],[11,7,1,"#68615d"],[12,7,5,"#f5f3e7"],[17,7,3,"#160610"],[3,8,1,"#160610"],[4,8,1,"#3e0040"],[5,8,1,"#68615d"],[6,8,1,"#160610"],[7,8,4,"#a51317"],[11,8,1,"#160610"],[12,8,3,"#68615d"],[15,8,3,"#f5f3e7"],[18,8,1,"#68615d"],[19,8,2,"#160610"],[2,9,1,"#160610"],[3,9,1,"#68615d"],[4,9,3,"#f5f3e7"],[7,9,1,"#160610"],[8,9,4,"#a51317"],[12,9,1,"#160610"],[13,9,2,"#3e0040"],[15,9,5,"#f5f3e7"],[20,9,1,"#68615d"],[21,9,1,"#160610"],[1,10,1,"#160610"],[2,10,1,"#68615d"],[3,10,5,"#f5f3e7"],[8,10,1,"#160610"],[9,10,3,"#a51317"],[12,10,2,"#160610"],[14,10,1,"#3e0040"],[15,10,1,"#68615d"],[16,10,5,"#f5f3e7"],[21,10,1,"#3e0040"],[22,10,1,"#000000"],[0,11,1,"#160610"],[1,11,1,"#68615d"],[2,11,6,"#f5f3e7"],[8,11,2,"#160610"],[10,11,3,"#a51317"],[13,11,2,"#160610"],[15,11,1,"#3e0040"],[16,11,1,"#68615d"],[17,11,5,"#f5f3e7"],[22,11,1,"#68615d"],[23,11,1,"#160610"],[0,12,1,"#160610"],[1,12,7,"#f5f3e7"],[8,12,2,"#160610"],[10,12,1,"#000000"],[11,12,3,"#a51317"],[14,12,2,"#160610"],[16,12,1,"#68615d"],[17,12,6,"#f5f3e7"],[23,12,1,"#160610"],[0,13,2,"#160610"],[2,13,6,"#f5f3e7"],[8,13,2,"#3e0040"],[10,13,1,"#160610"],[11,13,1,"#000000"],[12,13,3,"#a51317"],[15,13,1,"#160610"],[16,13,1,"#3e0040"],[17,13,5,"#f5f3e7"],[22,13,1,"#160610"],[23,13,1,"#3e0040"],[1,14,1,"#160610"],[2,14,1,"#3e0040"],[3,14,6,"#f5f3e7"],[9,14,2,"#3e0040"],[11,14,1,"#160610"],[12,14,1,"#000000"],[13,14,3,"#a51317"],[16,14,1,"#160610"],[17,14,1,"#68615d"],[18,14,2,"#f5f3e7"],[20,14,1,"#68615d"],[21,14,1,"#160610"],[22,14,1,"#3e0040"],[2,15,1,"#160610"],[3,15,1,"#3e0040"],[4,15,5,"#f5f3e7"],[9,15,2,"#68615d"],[11,15,2,"#160610"],[13,15,1,"#000000"],[14,15,3,"#a51317"],[17,15,1,"#160610"],[18,15,2,"#68615d"],[20,15,2,"#160610"],[3,16,1,"#160610"],[4,16,1,"#3e0040"],[5,16,1,"#68615d"],[6,16,5,"#f5f3e7"],[11,16,3,"#68615d"],[14,16,1,"#160610"],[15,16,3,"#a51317"],[18,16,2,"#160610"],[20,16,1,"#3e0040"],[5,17,1,"#160610"],[6,17,2,"#68615d"],[8,17,6,"#f5f3e7"],[14,17,1,"#68615d"],[15,17,1,"#160610"],[16,17,3,"#a51317"],[19,17,2,"#160610"],[7,18,1,"#160610"],[8,18,1,"#3e0040"],[9,18,5,"#68615d"],[14,18,1,"#3e0040"],[15,18,1,"#000000"],[16,18,1,"#160610"],[17,18,3,"#a51317"],[20,18,2,"#160610"],[17,19,1,"#160610"],[18,19,3,"#a51317"],[21,19,1,"#160610"],[18,20,1,"#000000"],[19,20,2,"#a51317"],[21,20,1,"#160610"],[19,21,3,"#000000"]],"show":[[8,4,8,"#190719"],[6,5,1,"#000000"],[7,5,2,"#190719"],[9,5,1,"#a7b9d2"],[10,5,4,"#fcf8e4"],[14,5,1,"#a7b9d2"],[15,5,3,"#190719"],[4,6,3,"#190719"],[7,6,10,"#fcf8e4"],[17,6,3,"#190719"],[3,7,2,"#190719"],[5,7,4,"#fcf8e4"],[9,7,6,"#234f9e"],[15,7,4,"#fcf8e4"],[19,7,2,"#190719"],[2,8,1,"#190719"],[3,8,1,"#234f9e"],[4,8,3,"#fcf8e4"],[7,8,1,"#a7b9d2"],[8,8,1,"#234f9e"],[9,8,1,"#a7b9d2"],[10,8,4,"#234f9e"],[14,8,1,"#a7b9d2"],[15,8,1,"#234f9e"],[16,8,1,"#a7b9d2"],[17,8,2,"#fcf8e4"],[19,8,1,"#a7b9d2"],[20,8,1,"#4d004d"],[21,8,1,"#190719"],[1,9,1,"#190719"],[2,9,1,"#4d004d"],[3,9,4,"#fcf8e4"],[7,9,1,"#a7b9d2"],[8,9,2,"#234f9e"],[10,9,1,"#a7b9d2"],[11,9,5,"#234f9e"],[16,9,1,"#a7b9d2"],[17,9,4,"#fcf8e4"],[21,9,1,"#4d004d"],[22,9,1,"#190719"],[0,10,1,"#000000"],[1,10,1,"#190719"],[2,10,4,"#fcf8e4"],[6,10,1,"#a7b9d2"],[7,10,2,"#234f9e"],[9,10,1,"#a7b9d2"],[10,10,1,"#fcf8e4"],[11,10,1,"#234f9e"],[12,10,1,"#000000"],[13,10,4,"#234f9e"],[17,10,1,"#a7b9d2"],[18,10,4,"#fcf8e4"],[22,10,2,"#190719"],[0,11,1,"#190719"],[1,11,5,"#fcf8e4"],[6,11,1,"#a7b9d2"],[7,11,2,"#234f9e"],[9,11,2,"#a7b9d2"],[11,11,1,"#4d004d"],[12,11,2,"#000000"],[14,11,3,"#234f9e"],[17,11,1,"#a7b9d2"],[18,11,5,"#fcf8e4"],[23,11,1,"#190719"],[0,12,1,"#190719"],[1,12,5,"#fcf8e4"],[6,12,1,"#a7b9d2"],[7,12,3,"#234f9e"],[10,12,4,"#000000"],[14,12,3,"#234f9e"],[17,12,1,"#a7b9d2"],[18,12,4,"#fcf8e4"],[22,12,1,"#a7b9d2"],[23,12,1,"#190719"],[0,13,2,"#190719"],[2,13,4,"#fcf8e4"],[6,13,1,"#a7b9d2"],[7,13,3,"#234f9e"],[10,13,1,"#190719"],[11,13,2,"#000000"],[13,13,4,"#234f9e"],[17,13,1,"#a7b9d2"],[18,13,3,"#fcf8e4"],[21,13,1,"#a7b9d2"],[22,13,2,"#190719"],[1,14,1,"#190719"],[2,14,1,"#4d004d"],[3,14,4,"#fcf8e4"],[7,14,9,"#234f9e"],[16,14,1,"#a7b9d2"],[17,14,3,"#fcf8e4"],[20,14,1,"#a7b9d2"],[21,14,1,"#4d004d"],[22,14,1,"#190719"],[2,15,1,"#190719"],[3,15,1,"#4d004d"],[4,15,3,"#fcf8e4"],[7,15,1,"#a7b9d2"],[8,15,8,"#234f9e"],[16,15,1,"#a7b9d2"],[17,15,2,"#fcf8e4"],[19,15,1,"#a7b9d2"],[20,15,1,"#4d004d"],[21,15,1,"#190719"],[3,16,2,"#190719"],[5,16,4,"#fcf8e4"],[9,16,6,"#234f9e"],[15,16,4,"#fcf8e4"],[19,16,2,"#190719"],[4,17,3,"#190719"],[7,17,10,"#fcf8e4"],[17,17,3,"#190719"],[6,18,1,"#000000"],[7,18,1,"#190719"],[8,18,1,"#000000"],[9,18,1,"#a7b9d2"],[10,18,4,"#fcf8e4"],[14,18,1,"#a7b9d2"],[15,18,1,"#000000"],[16,18,2,"#190719"],[8,19,1,"#190719"],[9,19,6,"#000000"]],"back":[[9,1,3,"#140414"],[12,1,1,"#1b0018"],[8,2,1,"#1b0018"],[9,2,1,"#000000"],[10,2,1,"#35b03d"],[11,2,1,"#246f23"],[12,2,1,"#1b0018"],[7,3,1,"#140414"],[8,3,1,"#000000"],[9,3,1,"#35b03d"],[10,3,1,"#41bb41"],[11,3,1,"#246f23"],[12,3,1,"#1b0018"],[6,4,1,"#140414"],[7,4,1,"#000000"],[8,4,3,"#41bb41"],[11,4,1,"#246f23"],[12,4,1,"#1b0018"],[5,5,1,"#1b0018"],[6,5,1,"#000000"],[7,5,3,"#41bb41"],[10,5,1,"#35b03d"],[11,5,1,"#246f23"],[12,5,1,"#1b0018"],[4,6,1,"#1b0018"],[5,6,1,"#140414"],[6,6,3,"#41bb41"],[9,6,2,"#35b03d"],[11,6,1,"#246f23"],[12,6,1,"#140414"],[13,6,11,"#1b0018"],[3,7,1,"#1b0018"],[4,7,1,"#000000"],[5,7,3,"#41bb41"],[8,7,3,"#35b03d"],[11,7,2,"#41bb41"],[13,7,1,"#35b03d"],[14,7,6,"#41bb41"],[20,7,2,"#35b03d"],[22,7,1,"#246f23"],[23,7,1,"#000000"],[2,8,1,"#1b0018"],[3,8,1,"#000000"],[4,8,3,"#41bb41"],[7,8,4,"#35b03d"],[11,8,11,"#41bb41"],[22,8,1,"#246f23"],[23,8,1,"#000000"],[1,9,1,"#1b0018"],[2,9,1,"#140414"],[3,9,3,"#41bb41"],[6,9,15,"#35b03d"],[21,9,2,"#246f23"],[23,9,1,"#000000"],[0,10,1,"#1b0018"],[1,10,1,"#000000"],[2,10,3,"#41bb41"],[5,10,16,"#35b03d"],[21,10,2,"#246f23"],[23,10,1,"#000000"],[0,11,1,"#1b0018"],[1,11,3,"#41bb41"],[4,11,17,"#35b03d"],[21,11,2,"#246f23"],[23,11,1,"#140414"],[0,12,1,"#1b0018"],[1,12,1,"#246f23"],[2,12,19,"#35b03d"],[21,12,2,"#246f23"],[23,12,1,"#140414"],[0,13,1,"#1b0018"],[1,13,1,"#000000"],[2,13,1,"#246f23"],[3,13,18,"#35b03d"],[21,13,2,"#246f23"],[23,13,1,"#000000"],[1,14,1,"#1b0018"],[2,14,1,"#000000"],[3,14,2,"#246f23"],[5,14,16,"#35b03d"],[21,14,2,"#246f23"],[23,14,1,"#000000"],[2,15,1,"#1b0018"],[3,15,1,"#000000"],[4,15,2,"#246f23"],[6,15,5,"#35b03d"],[11,15,12,"#246f23"],[23,15,1,"#000000"],[3,16,1,"#1b0018"],[4,16,1,"#140414"],[5,16,2,"#246f23"],[7,16,4,"#35b03d"],[11,16,1,"#246f23"],[12,16,11,"#140414"],[23,16,1,"#000000"],[4,17,1,"#1b0018"],[5,17,1,"#000000"],[6,17,2,"#246f23"],[8,17,3,"#35b03d"],[11,17,1,"#246f23"],[12,17,1,"#140414"],[13,17,10,"#000000"],[5,18,1,"#1b0018"],[6,18,1,"#000000"],[7,18,1,"#246f23"],[8,18,3,"#35b03d"],[11,18,1,"#246f23"],[12,18,1,"#1b0018"],[6,19,1,"#1b0018"],[7,19,1,"#000000"],[8,19,2,"#246f23"],[10,19,1,"#35b03d"],[11,19,1,"#246f23"],[12,19,1,"#1b0018"],[7,20,1,"#1b0018"],[8,20,1,"#000000"],[9,20,3,"#246f23"],[12,20,1,"#1b0018"],[8,21,1,"#1b0018"],[9,21,1,"#000000"],[10,21,1,"#246f23"],[11,21,1,"#140414"],[12,21,1,"#1b0018"],[9,22,3,"#140414"],[12,22,1,"#1b0018"]],"run":[[1,1,22,"#060506"],[0,2,1,"#170c19"],[1,2,1,"#31352e"],[2,2,20,"#86a472"],[22,2,1,"#31352e"],[23,2,1,"#170c19"],[0,3,1,"#170c19"],[1,3,1,"#86a472"],[2,3,20,"#767873"],[22,3,1,"#86a472"],[23,3,1,"#170c19"],[0,4,1,"#060506"],[1,4,1,"#767873"],[2,4,1,"#31352e"],[3,4,1,"#060506"],[4,4,1,"#131516"],[5,4,15,"#060506"],[20,4,1,"#131516"],[21,4,1,"#31352e"],[22,4,1,"#767873"],[23,4,1,"#170c19"],[0,5,1,"#060506"],[1,5,1,"#767873"],[2,5,20,"#131516"],[22,5,1,"#767873"],[23,5,1,"#170c19"],[0,6,1,"#170c19"],[1,6,1,"#767873"],[2,6,3,"#131516"],[5,6,1,"#86a472"],[6,6,1,"#31352e"],[7,6,15,"#131516"],[22,6,1,"#767873"],[23,6,1,"#170c19"],[0,7,1,"#060506"],[1,7,1,"#767873"],[2,7,3,"#131516"],[5,7,2,"#86a472"],[7,7,1,"#31352e"],[8,7,14,"#131516"],[22,7,1,"#767873"],[23,7,1,"#170c19"],[0,8,1,"#060506"],[1,8,1,"#767873"],[2,8,3,"#131516"],[5,8,4,"#86a472"],[9,8,1,"#31352e"],[10,8,12,"#131516"],[22,8,1,"#767873"],[23,8,1,"#170c19"],[0,9,1,"#060506"],[1,9,1,"#767873"],[2,9,3,"#131516"],[5,9,5,"#86a472"],[10,9,1,"#31352e"],[11,9,11,"#131516"],[22,9,1,"#767873"],[23,9,1,"#170c19"],[0,10,1,"#060506"],[1,10,1,"#767873"],[2,10,3,"#131516"],[5,10,6,"#86a472"],[11,10,11,"#131516"],[22,10,1,"#767873"],[23,10,1,"#170c19"],[0,11,1,"#170c19"],[1,11,1,"#767873"],[2,11,1,"#31352e"],[3,11,2,"#131516"],[5,11,5,"#86a472"],[10,11,1,"#31352e"],[11,11,11,"#131516"],[22,11,1,"#767873"],[23,11,1,"#170c19"],[0,12,1,"#170c19"],[1,12,1,"#767873"],[2,12,1,"#31352e"],[3,12,2,"#131516"],[5,12,3,"#86a472"],[8,12,1,"#767873"],[9,12,1,"#31352e"],[10,12,12,"#131516"],[22,12,1,"#767873"],[23,12,1,"#170c19"],[0,13,1,"#170c19"],[1,13,1,"#767873"],[2,13,1,"#31352e"],[3,13,2,"#131516"],[5,13,2,"#86a472"],[7,13,1,"#31352e"],[8,13,5,"#131516"],[13,13,4,"#767873"],[17,13,1,"#31352e"],[18,13,3,"#131516"],[21,13,1,"#31352e"],[22,13,1,"#767873"],[23,13,1,"#170c19"],[0,14,1,"#060506"],[1,14,1,"#767873"],[2,14,1,"#31352e"],[3,14,2,"#131516"],[5,14,1,"#86a472"],[6,14,1,"#31352e"],[7,14,6,"#131516"],[13,14,5,"#31352e"],[18,14,4,"#131516"],[22,14,1,"#767873"],[23,14,1,"#170c19"],[0,15,1,"#060506"],[1,15,1,"#767873"],[2,15,1,"#31352e"],[3,15,18,"#131516"],[21,15,1,"#31352e"],[22,15,1,"#767873"],[23,15,1,"#170c19"],[0,16,1,"#060506"],[1,16,1,"#767873"],[2,16,1,"#31352e"],[3,16,2,"#131516"],[5,16,16,"#060506"],[21,16,1,"#31352e"],[22,16,1,"#767873"],[23,16,1,"#170c19"],[0,17,1,"#170c19"],[1,17,22,"#767873"],[23,17,1,"#170c19"],[0,18,1,"#170c19"],[1,18,18,"#767873"],[19,18,2,"#31352e"],[21,18,2,"#767873"],[23,18,1,"#170c19"],[0,19,1,"#170c19"],[1,19,18,"#767873"],[19,19,2,"#31352e"],[21,19,2,"#767873"],[23,19,1,"#170c19"],[0,20,1,"#170c19"],[1,20,18,"#767873"],[19,20,1,"#131516"],[20,20,1,"#31352e"],[21,20,2,"#767873"],[23,20,1,"#170c19"],[0,21,1,"#170c19"],[1,21,1,"#131516"],[2,21,20,"#31352e"],[22,21,1,"#131516"],[23,21,1,"#170c19"],[1,22,22,"#170c19"]],"changes":[[2,0,1,"#47322f"],[3,0,13,"#030003"],[2,1,1,"#030003"],[3,1,1,"#47322f"],[4,1,5,"#fbf7e1"],[9,1,1,"#fbf6e0"],[10,1,2,"#fbf7e1"],[12,1,1,"#fbf6e0"],[13,1,1,"#fbf6df"],[14,1,1,"#c0c8ab"],[15,1,2,"#030003"],[2,2,1,"#030003"],[3,2,1,"#47322f"],[4,2,11,"#fbf6df"],[15,2,2,"#47322f"],[17,2,1,"#030003"],[2,3,1,"#030003"],[3,3,1,"#47322f"],[4,3,2,"#fbf6df"],[6,3,1,"#fbf6e0"],[7,3,1,"#fbf6df"],[8,3,1,"#fbf7e1"],[9,3,1,"#fbf6df"],[10,3,1,"#fbf7e1"],[11,3,2,"#fbf6df"],[13,3,1,"#fbf6e0"],[14,3,1,"#fbf6df"],[15,3,1,"#47322f"],[16,3,1,"#c0c8ab"],[17,3,1,"#47322f"],[18,3,1,"#030003"],[2,4,1,"#030003"],[3,4,1,"#47322f"],[4,4,2,"#fbf6df"],[6,4,2,"#fbf6e0"],[8,4,3,"#c0c8ab"],[11,4,2,"#fbf6df"],[13,4,1,"#fbf6e0"],[14,4,1,"#fbf6df"],[15,4,1,"#47322f"],[16,4,2,"#c0c8ab"],[18,4,1,"#47322f"],[19,4,1,"#030003"],[2,5,1,"#030003"],[3,5,1,"#47322f"],[4,5,1,"#fbf6e0"],[5,5,2,"#fbf6df"],[7,5,1,"#fbf6e0"],[8,5,3,"#47322f"],[11,5,2,"#fbf6e0"],[13,5,2,"#fbf6df"],[15,5,1,"#47322f"],[16,5,3,"#c0c8ab"],[19,5,1,"#47322f"],[20,5,1,"#030003"],[2,6,1,"#030003"],[3,6,1,"#47322f"],[4,6,1,"#fbf6e0"],[5,6,1,"#fbf7e1"],[6,6,2,"#fbf6e0"],[8,6,3,"#47322f"],[11,6,2,"#fbf6e0"],[13,6,2,"#fbf6df"],[15,6,1,"#47322f"],[16,6,4,"#c0c8ab"],[20,6,1,"#030003"],[2,7,1,"#030003"],[3,7,1,"#47322f"],[4,7,1,"#fbf6df"],[5,7,1,"#c0c8ab"],[6,7,2,"#47322f"],[8,7,1,"#030003"],[9,7,4,"#47322f"],[13,7,1,"#c0c8ab"],[14,7,1,"#fbf6df"],[15,7,6,"#47322f"],[2,8,1,"#030003"],[3,8,1,"#47322f"],[4,8,1,"#fbf7e1"],[5,8,1,"#c0c8ab"],[6,8,7,"#47322f"],[13,8,1,"#c0c8ab"],[14,8,1,"#fbf6e0"],[15,8,1,"#fbf6df"],[16,8,2,"#fbf6e0"],[18,8,1,"#fbf6df"],[19,8,1,"#fbf6e0"],[20,8,1,"#c0c8ab"],[2,9,1,"#030003"],[3,9,1,"#47322f"],[4,9,1,"#fbf6e0"],[5,9,1,"#c0c8ab"],[6,9,7,"#47322f"],[13,9,1,"#c0c8ab"],[14,9,1,"#fbf6df"],[15,9,3,"#fbf6e0"],[18,9,1,"#fbf7e1"],[19,9,1,"#fbf6e0"],[20,9,1,"#c0c8ab"],[2,10,1,"#030003"],[3,10,1,"#47322f"],[4,10,1,"#fbf7e1"],[5,10,1,"#fbf6e0"],[6,10,1,"#fbf6df"],[7,10,1,"#fbf6e0"],[8,10,3,"#47322f"],[11,10,1,"#fbf6df"],[12,10,1,"#fbf7e1"],[13,10,1,"#fbf6df"],[14,10,1,"#fbf6e0"],[15,10,1,"#fbf7e1"],[16,10,4,"#fbf6e0"],[20,10,1,"#c0c8ab"],[2,11,1,"#030003"],[3,11,1,"#47322f"],[4,11,1,"#fbf6e0"],[5,11,2,"#fbf6df"],[7,11,1,"#fbf7e1"],[8,11,3,"#47322f"],[11,11,1,"#fbf7e1"],[12,11,2,"#fbf6df"],[14,11,2,"#fbf6e0"],[16,11,1,"#fbf7e1"],[17,11,3,"#fbf6e0"],[20,11,1,"#c0c8ab"],[2,12,1,"#030003"],[3,12,1,"#47322f"],[4,12,1,"#fbf6e0"],[5,12,1,"#fbf7e1"],[6,12,2,"#fbf6df"],[8,12,3,"#c0c8ab"],[11,12,1,"#fbf6df"],[12,12,5,"#fbf6e0"],[17,12,2,"#fbf7e1"],[19,12,1,"#fbf6e0"],[20,12,1,"#c0c8ab"],[2,13,1,"#030003"],[3,13,1,"#47322f"],[4,13,1,"#fbf6e0"],[5,13,1,"#fbf7e1"],[6,13,1,"#fbf6e0"],[7,13,2,"#fbf6df"],[9,13,1,"#fbf6e0"],[10,13,2,"#fbf6df"],[12,13,6,"#fbf6e0"],[18,13,1,"#fbf7e1"],[19,13,1,"#fbf6e0"],[20,13,1,"#c0c8ab"],[2,14,1,"#030003"],[3,14,1,"#47322f"],[4,14,4,"#fbf6e0"],[8,14,3,"#fbf6df"],[11,14,3,"#fbf7e1"],[14,14,1,"#fbf6e0"],[15,14,1,"#fbf7e1"],[16,14,4,"#fbf6e0"],[20,14,1,"#c0c8ab"],[2,15,1,"#030003"],[3,15,1,"#47322f"],[4,15,2,"#fbf6df"],[6,15,1,"#fbf6e0"],[7,15,2,"#fbf7e1"],[9,15,3,"#fbf6df"],[12,15,1,"#fbf6e0"],[13,15,2,"#fbf6df"],[15,15,1,"#fbf6e0"],[16,15,3,"#fbf7e1"],[19,15,1,"#fbf6e0"],[20,15,1,"#c0c8ab"],[2,16,1,"#030003"],[3,16,1,"#47322f"],[4,16,3,"#fbf6df"],[7,16,1,"#c0c8ab"],[8,16,8,"#47322f"],[16,16,3,"#fbf6e0"],[19,16,1,"#fbf7e1"],[20,16,1,"#c0c8ab"],[2,17,1,"#030003"],[3,17,1,"#47322f"],[4,17,1,"#fbf6df"],[5,17,1,"#fbf6e0"],[6,17,1,"#fbf6df"],[7,17,1,"#c0c8ab"],[8,17,8,"#47322f"],[16,17,2,"#fbf6e0"],[18,17,2,"#fbf7e1"],[20,17,1,"#c0c8ab"],[2,18,1,"#030003"],[3,18,1,"#47322f"],[4,18,3,"#fbf6df"],[7,18,1,"#c0c8ab"],[8,18,8,"#47322f"],[16,18,2,"#fbf6e0"],[18,18,1,"#fbf7e1"],[19,18,1,"#fbf6e0"],[20,18,1,"#c0c8ab"],[2,19,1,"#030003"],[3,19,1,"#47322f"],[4,19,4,"#fbf6df"],[8,19,8,"#c0c8ab"],[16,19,4,"#fbf6e0"],[20,19,1,"#c0c8ab"],[2,20,1,"#030003"],[3,20,1,"#47322f"],[4,20,1,"#fbf6df"],[5,20,1,"#fbf6e0"],[6,20,3,"#fbf6df"],[9,20,1,"#fbf6e0"],[10,20,1,"#fbf6df"],[11,20,2,"#fbf6e0"],[13,20,4,"#fbf6df"],[17,20,3,"#fbf6e0"],[20,20,1,"#c0c8ab"],[2,21,1,"#030003"],[3,21,1,"#47322f"],[4,21,2,"#fbf6df"],[6,21,1,"#fbf6e0"],[7,21,2,"#fbf6df"],[9,21,10,"#fbf6e0"],[19,21,1,"#fbf6df"],[20,21,1,"#c0c8ab"],[2,22,1,"#030003"],[3,22,1,"#47322f"],[4,22,16,"#fbf6df"],[20,22,1,"#c0c8ab"],[2,23,1,"#47322f"],[3,23,18,"#030003"]],"graph":[[4,0,1,"#190319"],[5,0,2,"#1e262a"],[7,0,1,"#190319"],[3,1,1,"#190319"],[4,1,1,"#1e262a"],[5,1,2,"#59bd43"],[7,1,1,"#1e262a"],[8,1,1,"#000000"],[3,2,1,"#1e262a"],[4,2,4,"#59bd43"],[8,2,1,"#1e262a"],[3,3,1,"#1e262a"],[4,3,4,"#59bd43"],[8,3,1,"#1e262a"],[3,4,1,"#190319"],[4,4,4,"#59bd43"],[8,4,1,"#190319"],[4,5,1,"#000000"],[5,5,2,"#1e262a"],[7,5,1,"#000000"],[5,6,2,"#3e6078"],[7,6,1,"#000000"],[5,7,2,"#3e6078"],[7,7,1,"#000000"],[5,8,2,"#3e6078"],[7,8,1,"#000000"],[4,9,1,"#190319"],[5,9,2,"#1e262a"],[7,9,1,"#190319"],[3,10,1,"#190319"],[4,10,1,"#1e262a"],[5,10,3,"#59bd43"],[8,10,1,"#000000"],[3,11,1,"#1e262a"],[4,11,4,"#59bd43"],[8,11,1,"#1e262a"],[9,11,1,"#190319"],[3,12,1,"#1e262a"],[4,12,4,"#59bd43"],[8,12,2,"#1e262a"],[10,12,1,"#190319"],[3,13,1,"#000000"],[4,13,1,"#1e262a"],[5,13,3,"#59bd43"],[8,13,1,"#000000"],[9,13,2,"#1e262a"],[11,13,1,"#300033"],[4,14,1,"#190319"],[5,14,2,"#1e262a"],[7,14,1,"#000000"],[8,14,2,"#190319"],[10,14,1,"#3e6078"],[11,14,1,"#1e262a"],[12,14,1,"#300033"],[5,15,2,"#3e6078"],[7,15,1,"#000000"],[10,15,1,"#190319"],[11,15,1,"#3e6078"],[12,15,1,"#1e262a"],[13,15,1,"#190319"],[5,16,2,"#3e6078"],[7,16,1,"#000000"],[11,16,1,"#190319"],[12,16,2,"#3e6078"],[14,16,2,"#190319"],[16,16,3,"#1e262a"],[19,16,1,"#190319"],[5,17,2,"#3e6078"],[7,17,1,"#000000"],[12,17,1,"#190319"],[13,17,1,"#3e6078"],[14,17,2,"#1e262a"],[16,17,3,"#3e6078"],[19,17,1,"#1e262a"],[20,17,1,"#000000"],[4,18,1,"#000000"],[5,18,2,"#1e262a"],[7,18,1,"#190319"],[13,18,2,"#190319"],[15,18,5,"#3e6078"],[20,18,1,"#1e262a"],[3,19,1,"#190319"],[4,19,4,"#59bd43"],[8,19,1,"#1e262a"],[14,19,1,"#190319"],[15,19,5,"#3e6078"],[20,19,1,"#1e262a"],[3,20,1,"#1e262a"],[4,20,4,"#59bd43"],[8,20,1,"#1e262a"],[14,20,1,"#190319"],[15,20,5,"#3e6078"],[20,20,1,"#190319"],[3,21,1,"#1e262a"],[4,21,4,"#59bd43"],[8,21,1,"#1e262a"],[15,21,1,"#190319"],[16,21,3,"#3e6078"],[19,21,1,"#190319"],[3,22,1,"#190319"],[4,22,1,"#1e262a"],[5,22,2,"#59bd43"],[7,22,1,"#1e262a"],[8,22,1,"#000000"],[4,23,1,"#190319"],[5,23,2,"#1e262a"],[7,23,1,"#190319"]],"agent":[[10,0,3,"#000000"],[13,0,1,"#220723"],[10,1,1,"#171c1c"],[11,1,2,"#6b8180"],[13,1,1,"#171c1c"],[10,2,1,"#434747"],[11,2,2,"#6b8180"],[13,2,1,"#434747"],[10,3,1,"#171c1c"],[11,3,2,"#434747"],[13,3,1,"#171c1c"],[10,4,1,"#000000"],[11,4,2,"#171c1c"],[13,4,1,"#220723"],[11,5,2,"#434747"],[9,6,1,"#220723"],[10,6,1,"#171c1c"],[11,6,1,"#6b8180"],[12,6,1,"#434747"],[13,6,1,"#171c1c"],[14,6,1,"#220723"],[4,7,1,"#220723"],[5,7,5,"#434747"],[10,7,3,"#a2b9b6"],[13,7,1,"#6b8180"],[14,7,5,"#434747"],[19,7,1,"#171c1c"],[3,8,1,"#000000"],[4,8,1,"#6b8180"],[5,8,14,"#a2b9b6"],[19,8,1,"#6b8180"],[20,8,1,"#000000"],[2,9,1,"#220723"],[3,9,1,"#6b8180"],[4,9,16,"#a2b9b6"],[20,9,1,"#434747"],[21,9,1,"#220723"],[2,10,1,"#220723"],[3,10,1,"#6b8180"],[4,10,2,"#a2b9b6"],[6,10,12,"#434747"],[18,10,2,"#a2b9b6"],[20,10,1,"#434747"],[21,10,1,"#220723"],[1,11,2,"#171c1c"],[3,11,1,"#6b8180"],[4,11,1,"#a2b9b6"],[5,11,13,"#171c1c"],[18,11,1,"#434747"],[19,11,1,"#a2b9b6"],[20,11,1,"#434747"],[21,11,2,"#171c1c"],[0,12,1,"#220723"],[1,12,3,"#6b8180"],[4,12,1,"#a2b9b6"],[5,12,3,"#171c1c"],[8,12,1,"#434747"],[9,12,6,"#171c1c"],[15,12,1,"#434747"],[16,12,2,"#171c1c"],[18,12,1,"#434747"],[19,12,1,"#a2b9b6"],[20,12,1,"#434747"],[21,12,2,"#6b8180"],[23,12,1,"#220723"],[0,13,1,"#220723"],[1,13,1,"#a2b9b6"],[2,13,1,"#434747"],[3,13,1,"#6b8180"],[4,13,1,"#a2b9b6"],[5,13,2,"#171c1c"],[7,13,1,"#434747"],[8,13,1,"#a2b9b6"],[9,13,1,"#434747"],[10,13,4,"#171c1c"],[14,13,1,"#434747"],[15,13,1,"#a2b9b6"],[16,13,1,"#434747"],[17,13,1,"#171c1c"],[18,13,1,"#434747"],[19,13,1,"#a2b9b6"],[20,13,2,"#434747"],[22,13,1,"#a2b9b6"],[23,13,1,"#220723"],[0,14,1,"#220723"],[1,14,1,"#6b8180"],[2,14,1,"#434747"],[3,14,1,"#6b8180"],[4,14,1,"#a2b9b6"],[5,14,2,"#171c1c"],[7,14,1,"#6b8180"],[8,14,1,"#a2b9b6"],[9,14,1,"#6b8180"],[10,14,4,"#171c1c"],[14,14,1,"#6b8180"],[15,14,1,"#a2b9b6"],[16,14,1,"#6b8180"],[17,14,1,"#171c1c"],[18,14,1,"#434747"],[19,14,1,"#a2b9b6"],[20,14,2,"#434747"],[22,14,1,"#6b8180"],[23,14,1,"#220723"],[0,15,1,"#220723"],[1,15,1,"#6b8180"],[2,15,1,"#434747"],[3,15,1,"#6b8180"],[4,15,1,"#a2b9b6"],[5,15,2,"#171c1c"],[7,15,1,"#6b8180"],[8,15,1,"#a2b9b6"],[9,15,1,"#6b8180"],[10,15,4,"#171c1c"],[14,15,1,"#6b8180"],[15,15,1,"#a2b9b6"],[16,15,1,"#6b8180"],[17,15,1,"#171c1c"],[18,15,1,"#434747"],[19,15,1,"#a2b9b6"],[20,15,2,"#434747"],[22,15,1,"#6b8180"],[23,15,1,"#220723"],[0,16,1,"#220723"],[1,16,1,"#6b8180"],[2,16,1,"#434747"],[3,16,1,"#6b8180"],[4,16,1,"#a2b9b6"],[5,16,3,"#171c1c"],[8,16,1,"#434747"],[9,16,6,"#171c1c"],[15,16,1,"#434747"],[16,16,2,"#171c1c"],[18,16,1,"#434747"],[19,16,1,"#a2b9b6"],[20,16,2,"#434747"],[22,16,1,"#6b8180"],[23,16,1,"#220723"],[0,17,1,"#220723"],[1,17,2,"#434747"],[3,17,1,"#6b8180"],[4,17,1,"#a2b9b6"],[5,17,4,"#171c1c"],[9,17,1,"#434747"],[10,17,4,"#171c1c"],[14,17,1,"#434747"],[15,17,3,"#171c1c"],[18,17,1,"#434747"],[19,17,1,"#a2b9b6"],[20,17,3,"#434747"],[23,17,1,"#000000"],[1,18,2,"#000000"],[3,18,1,"#6b8180"],[4,18,1,"#a2b9b6"],[5,18,4,"#171c1c"],[9,18,1,"#6b8180"],[10,18,4,"#a2b9b6"],[14,18,1,"#6b8180"],[15,18,3,"#171c1c"],[18,18,1,"#434747"],[19,18,1,"#a2b9b6"],[20,18,1,"#434747"],[21,18,2,"#000000"],[2,19,1,"#220723"],[3,19,1,"#6b8180"],[4,19,1,"#a2b9b6"],[5,19,1,"#434747"],[6,19,4,"#171c1c"],[10,19,4,"#434747"],[14,19,4,"#171c1c"],[18,19,1,"#434747"],[19,19,1,"#a2b9b6"],[20,19,1,"#434747"],[21,19,1,"#220723"],[2,20,1,"#220723"],[3,20,1,"#6b8180"],[4,20,2,"#a2b9b6"],[6,20,12,"#434747"],[18,20,2,"#a2b9b6"],[20,20,1,"#434747"],[21,20,1,"#220723"],[2,21,1,"#220723"],[3,21,1,"#434747"],[4,21,15,"#a2b9b6"],[19,21,1,"#6b8180"],[20,21,1,"#171c1c"],[21,21,1,"#220723"],[3,22,1,"#220723"],[4,22,1,"#171c1c"],[5,22,14,"#6b8180"],[19,22,1,"#171c1c"],[20,22,1,"#220723"],[4,23,1,"#220723"],[5,23,15,"#000000"]]}}
+function icon(name) {
+  const art = ICON_ART?.icons?.[name]
+  if (art) {
+    const g = ICON_ART.grid
+    const svg = svgEl('svg', { class: 'px', viewBox: `0 0 ${g} ${g}`, 'aria-hidden': 'true' })
+    for (const [x, y, w, fill] of art) svg.append(svgEl('rect', { x, y, width: w, height: 1, fill }))
+    return svg
+  }
+  const svg = svgEl('svg', { class: 'px', viewBox: '0 0 12 12', 'aria-hidden': 'true' })
+  for (const [x, y, w, hh] of ICONS[name] || []) svg.append(svgEl('rect', { x, y, width: w, height: hh }))
+  return svg
+}
+// An icon-only button: the tooltip says what it does, and is its accessible name too.
+const iconBtn = (name, tip, props) => h('button', { type: 'button', ...props, class: `btn ico ${props.class || ''}`.trim(), 'aria-label': tip, 'data-tip': tip }, icon(name))
+const FILE_STATUS = {
+  added: ['A', 'Aggiunto'], untracked: ['A', 'Nuovo, non ancora in git'], modified: ['M', 'Modificato'],
+  deleted: ['D', 'Eliminato'], renamed: ['R', 'Rinominato'], conflict: ['C', 'In conflitto'],
+}
+const TABS = [['run', 'Esecuzione', 'run'], ['changes', 'Modifiche', 'changes'], ['graph', 'Grafo git', 'graph']]
+
+const ui = {
+  snap: null,
+  sprites: {},
+  uris: {},
+  // the session whose agents are open in the popover
+  popover: null,
+  pending: {},
+  conn: 'connecting',
+  lastOk: 0,
+  loopRunning: false,
+  focus: focusFromHash(),
+  tab: 'run',
+  openFiles: new Set(),
+  diffs: new Map(),
+  graph: null,
+  wake: null,
+}
+let mcp = null
+
+// ---------------------------------------------------------------- helpers
+
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag)
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue
+    if (k === 'class') el.className = v
+    else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v)
+    else el.setAttribute(k, v === true ? '' : String(v))
+  }
+  for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) el.append(kid instanceof Node ? kid : String(kid))
+  return el
+}
+const svgEl = (tag, attrs) => {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag)
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v))
+  return el
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+function focusFromHash() {
+  const m = /^#s-([0-9a-f-]{36})$/.exec(location.hash)
+  return m ? m[1] : null
+}
+
+function ago(ms) {
+  const min = Math.max(0, Math.round(ms / 60000))
+  if (min < 1) return 'ora'
+  if (min < 60) return `${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `${h} h${min % 60 ? ` ${min % 60} min` : ''}`
+  return `${Math.floor(h / 24)} g ${h % 24} h`
+}
+function until(ms) {
+  if (ms <= 0) return 'ora'
+  const min = Math.ceil(ms / 60000)
+  if (min < 60) return `tra ${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `tra ${h} h ${min % 60} min`
+  return `tra ${Math.floor(h / 24)} g ${h % 24} h`
+}
+function clock(iso, withDay) {
+  try {
+    const opts = withDay
+      ? { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' }
+      : { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' }
+    return new Date(iso).toLocaleString('it-IT', opts)
+  } catch { return '' }
+}
+const hhmmss = t => new Date(t).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Rome' })
+const shortDate = t => new Date(t).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'Europe/Rome' })
+const tokens = n => n >= 1e6 ? `${(n / 1e6).toFixed(1).replace('.', ',')} M` : n >= 1e3 ? `${Math.round(n / 1e3)} k` : String(n)
+const usd = n => `$${n.toFixed(2).replace('.', ',')}`
+const num = n => n.toLocaleString('it-IT')
+function modelName(id) {
+  const m = /claude-([a-z]+)-(\d+)-(\d+)/.exec(id || '')
+  return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}.${m[3]}` : (id || '')
+}
+// mcp__server__tool reads as its tool's name; the full name stays in the tooltip
+const toolChip = name => h('span', { class: 'tool', title: name }, /^mcp__.+__(.+)$/.exec(name)?.[1] ?? name)
+const crabKind = row => (row.state === 'waiting' && /\/idle$/.test(row.crab) ? 'idle' : row.state)
+
+function sprite(key, alt, cls) {
+  const svg = ui.sprites[key]
+  if (!svg) return h('img', { alt, class: cls, src: BRAND })
+  ui.uris[key] ??= `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+  return h('img', { alt, class: cls, src: ui.uris[key] })
+}
+
+let toastTimer
+function toast(text) {
+  const el = document.getElementById('toast')
+  el.textContent = text
+  el.hidden = false
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { el.hidden = true }, 4200)
+}
+
+// ---------------------------------------------------------------- navigation
+
+function go(id) {
+  location.hash = id ? `s-${id}` : ''
+}
+
+function onRoute() {
+  const next = focusFromHash()
+  if (next === ui.focus) return
+  ui.focus = next
+  ui.tab = 'run'
+  ui.openFiles = new Set()
+  ui.diffs = new Map()
+  ui.graph = null
+  window.scrollTo(0, 0)
+  render()
+  // the poll in flight asks for the old session: drop it and ask again now
+  ui.wake?.()
+}
+window.addEventListener('hashchange', onRoute)
+document.getElementById('home').addEventListener('click', () => go(null))
+
+// ---------------------------------------------------------------- board
+
+const BRAND = document.getElementById('brand').getAttribute('src')
+
+const EXAMPLE = {
+  version: 'example',
+  at: Date.now(),
+  limits: [
+    { kind: 'five_hour', percent: 42, resetsAt: new Date(Date.now() + 2.4 * 3600e3).toISOString() },
+    { kind: 'seven_day', percent: 18, resetsAt: new Date(Date.now() + 4.2 * 86400e3).toISOString() },
+  ],
+  rows: [
+    { id: 'ex1', title: 'Esempio · deploy staging', dir: 'infra', origin: 'cli', state: 'approval', since: Date.now() - 4 * 60e3, crab: 'x', agents: [], example: true },
+    { id: 'ex2', title: 'Esempio · report mensile', dir: 'report', origin: 'desktop', state: 'waiting', since: Date.now() - 12 * 60e3, crab: 'x', agents: [], ledger: { fresh: 380000, usd: 1.2 }, example: true },
+    { id: 'ex3', title: 'Esempio · refactor API', dir: 'gestionale', origin: 'desktop', state: 'working', since: Date.now() - 2 * 60e3, crab: 'x', ledger: { fresh: 1250000, usd: 3.4 }, example: true,
+      agents: [{ id: 'a1', type: 'Explore', desc: 'Cerca le chiamate a /orders', running: true, at: Date.now() - 20e3, crab: 'x', model: 'claude-sonnet-5-5', last: { kind: 'tool', name: 'Grep', text: 'orders\\.(create|update)' } }] },
+  ],
+}
+
+function renderLimits(snap) {
+  for (const [kind, label] of [['five_hour', 'Sessione 5 ore'], ['seven_day', 'Settimana']]) {
+    const tile = document.getElementById(`limit-${kind}`)
+    const l = snap?.limits?.find(x => x.kind === kind)
+    tile.replaceChildren(h('span', { class: 'label' }, label))
+    if (!l) { tile.append(h('span', { class: 'sub' }, 'Nessun dato ancora')); continue }
+    const pct = Math.round(l.percent)
+    const tone = pct >= 85 ? 'crit' : pct >= 60 ? 'warn' : ''
+    const reset = l.resetsAt ? `reset ${clock(l.resetsAt, kind === 'seven_day')} · ${until(Date.parse(l.resetsAt) - Date.now())}` : ''
+    const bar = h('i', { class: tone })
+    bar.style.width = `${Math.min(100, Math.max(0, pct))}%`
+    tile.append(
+      h('span', { class: 'big' }, `${pct}%`),
+      h('div', { class: 'meter', role: 'meter', 'aria-valuenow': pct, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-label': label }, bar),
+      h('span', { class: 'sub' }, reset),
+    )
+  }
+}
+
+function renderCounts(snap) {
+  const rows = snap?.rows || []
+  const waiting = rows.filter(r => r.state !== 'working').length
+  const agentsOn = rows.reduce((n, r) => n + r.agents.filter(a => a.running).length, 0)
+  document.getElementById('counts').replaceChildren(
+    h('span', null, h('b', null, snap ? waiting : '–'), 'ti aspettano'),
+    h('span', null, h('b', null, snap ? rows.length - waiting : '–'), 'lavorano'),
+  )
+  document.getElementById('agentsCount').textContent = `Agenti al lavoro: ${snap ? agentsOn : '–'}`
+}
+
+function statusOf(row) {
+  const a = row.action
+  const local = ui.pending[row.id]
+  if (local && (!a || a.at < local.at - 2000)) return { cls: '', text: ACTION_LABEL[local.action]?.queued || 'In coda…' }
+  if (!a) return null
+  if (a.status === 'error') return { cls: 'bad', text: `Non riuscita: ${a.message || 'errore sconosciuto'}` }
+  if (a.status === 'expired') return { cls: 'bad', text: 'Non eseguita: la sessione non ha risposto. La mod crab-sessions è attiva lì?' }
+  const text = ACTION_LABEL[a.action]?.[a.status] || a.status
+  return { cls: a.status === 'done' ? 'ok' : '', text: a.status === 'done' && a.message && a.action === 'split' ? `${text}: ${a.message}` : text }
+}
+
+function agentRow(row, a, now) {
+  const step = a.last
+    ? h('span', { class: 'step' }, a.last.kind === 'tool' ? toolChip(a.last.name) : null, a.last.text)
+    : null
+  return h('button', { class: `agent${a.running ? ' on' : ''}`, type: 'button', 'data-focus': `${row.id}:agent:${a.id}`, onclick: () => openAgent(row, a), disabled: row.example },
+    h('span', { class: 'd', 'aria-hidden': 'true' }),
+    h('span', { class: 'name' }, a.type, a.desc ? h('small', null, a.desc) : null),
+    h('span', { class: 'when' }, a.running ? ago(now - a.at) : 'finito'),
+    step,
+  )
+}
+
+function actionButtons(row, { canOpen, busy, openLabel }) {
+  const off = row.example || busy
+  // the app archives its own sessions; a terminal one can only leave the page
+  const shelve = row.origin === 'desktop'
+    ? iconBtn('archive', 'Archivia: ferma la sessione e la toglie dall’elenco (si riapre dagli Archiviati dell’app)', { 'data-focus': `${row.id}:archive`, disabled: off, onclick: () => askArchive(row) })
+    : iconBtn('hide', 'Nascondi da questa pagina (le sessioni del Terminale non si archiviano)', { 'data-focus': `${row.id}:hide`, disabled: row.example, onclick: () => hideSession(row) })
+  return h('div', { class: 'actions' },
+    iconBtn('open', canOpen ? openLabel : 'Sessione del Terminale: aprila da lì', { 'data-focus': `${row.id}:open`, disabled: !canOpen, onclick: () => openSession(row) }),
+    iconBtn('compact', 'Compatta: riduce la conversazione e libera contesto', { 'data-focus': `${row.id}:compact`, disabled: off, onclick: () => askCompact(row) }),
+    iconBtn('clear', 'Pulisci: riparte da una conversazione vuota, come /clear', { class: 'danger', 'data-focus': `${row.id}:clear`, disabled: off, onclick: () => askClear(row) }),
+    iconBtn('split', 'Dividi: avvia una copia della sessione per un lavoro in parallelo', { 'data-focus': `${row.id}:split`, disabled: off, onclick: () => askSplit(row) }),
+    shelve,
+  )
+}
+
+const isBusy = row => !!ui.pending[row.id] || row.action?.status === 'queued' || row.action?.status === 'running'
+
+function card(row, now) {
+  const kind = crabKind(row)
+  const canOpen = row.origin === 'desktop' && !row.example
+  const agents = row.agents || []
+  const running = agents.filter(a => a.running)
+  const isOpen = ui.popover === row.id
+  const st = statusOf(row)
+  const view = () => { if (!row.example) go(row.id) }
+
+  const meta = [h('span', null, row.dir), h('span', null, row.origin === 'desktop' ? 'App' : 'Terminale')]
+  if (row.example) meta.push(h('span', { class: 'badge' }, 'Esempio'))
+
+  let agentsBox = null
+  if (agents.length > 0) {
+    const label = running.length > 0
+      ? `${running.length} ${running.length === 1 ? 'agente' : 'agenti'} al lavoro · ${agents.length} recenti`
+      : `${agents.length} ${agents.length === 1 ? 'agente recente' : 'agenti recenti'}`
+    agentsBox = h('div', { class: 'agents' },
+      h('div', { class: 'agents-bar' },
+        running.length > 0 ? h('span', { class: 'swim', 'aria-hidden': 'true' }, running.slice(0, 6).map(a => sprite(a.crab, ''))) : null,
+        h('span', { class: 'txt' }, label),
+        h('button', {
+          class: 'link', type: 'button', 'aria-expanded': String(isOpen), 'aria-controls': 'agentPop', 'data-focus': `${row.id}:agents`,
+          'data-pop-toggle': row.id, disabled: row.example,
+          onclick: () => togglePopover(row.id),
+        }, 'Mostra'),
+      ),
+    )
+  }
+
+  return h('article', { class: `card s-${kind}${row.example ? ' is-example' : ''}`, 'aria-label': row.title, 'data-card': row.id },
+    h('div', { class: 'head' },
+      h('button', { class: 'crab', type: 'button', title: row.example ? '' : 'Dettaglio della sessione', 'data-focus': `${row.id}:crab`, disabled: row.example, onclick: view },
+        sprite(row.crab, SHORT[kind])),
+      h('div', { class: 'who' },
+        h('button', { class: 'title', type: 'button', 'data-focus': `${row.id}:title`, disabled: row.example, onclick: view }, row.title),
+        h('div', { class: 'meta' }, meta),
+        h('span', { class: 'pill' }, `${SHORT[kind]} · ${ago(now - row.since)}`),
+      ),
+    ),
+    h('div', { class: 'card-body' },
+      st ? h('div', { class: `status ${st.cls}`, role: 'status' }, st.text) : null,
+      row.ledger ? h('div', { class: 'numbers' }, `${tokens(row.ledger.fresh)} token · ${usd(row.ledger.usd)}`) : null,
+      agentsBox,
+    ),
+    actionButtons(row, { canOpen, busy: isBusy(row), openLabel: 'Apri la conversazione nell’app' }),
+  )
+}
+
+function boardView(snap, now) {
+  const parts = []
+  const rows = snap?.rows || []
+  if (ui.snap && rows.length === 0) {
+    parts.push(h('div', { class: 'empty' }, 'Nessuna sessione aperta. Appena ne apri una nell’app o nel Terminale compare qui.'))
+  }
+  for (const g of GROUPS) {
+    const list = rows.filter(r => g.states.includes(r.state))
+    if (list.length === 0) continue
+    parts.push(h('section', { class: 'group', 'aria-label': g.title },
+      h('div', { class: 'group-head' }, h('h2', null, g.title), h('span', { class: 'n' }, String(list.length))),
+      h('div', { class: 'grid' }, list.map(r => card(r, now))),
+    ))
+  }
+  const hidden = snap?.hidden || []
+  if (hidden.length > 0) {
+    parts.push(h('section', { class: 'group hidden-box', 'aria-label': 'Nascoste' },
+      h('div', { class: 'group-head' }, h('h2', null, 'Nascoste'), h('span', { class: 'n' }, String(hidden.length))),
+      h('div', { class: 'hidden-list' }, hidden.map(x => h('span', { class: 'chip' }, `${x.title} · ${x.dir}`,
+        iconBtn('show', 'Rimetti nell’elenco', { 'data-focus': `${x.id}:unhide`, onclick: () => unhideSession(x) })))),
+    ))
+  }
+  return parts
+}
+
+// ---------------------------------------------------------------- session view
+
+function railView(rows, now) {
+  const items = []
+  for (const g of GROUPS) {
+    const list = rows.filter(r => g.states.includes(r.state))
+    if (list.length === 0) continue
+    items.push(h('h3', null, g.title))
+    items.push(h('div', { class: 'rail-list' }, list.map(r => {
+      const kind = crabKind(r)
+      return h('button', {
+        class: `rail-item s-${kind}`, type: 'button', 'data-focus': `rail:${r.id}`,
+        'aria-current': r.id === ui.focus ? 'page' : null, onclick: () => go(r.id),
+      },
+        sprite(r.crab, ''),
+        h('span', { class: 't' }, r.title),
+        h('span', { class: 's' }, `${SHORT[kind]} · ${ago(now - r.since)}`),
+      )
+    })))
+  }
+  return h('nav', { class: 'rail', 'aria-label': 'Sessioni' },
+    h('button', { class: 'btn back', type: 'button', 'data-focus': 'rail:back', onclick: () => go(null) }, icon('back'), 'Dashboard'),
+    items,
+  )
+}
+
+function detailHead(row, detail, now) {
+  const kind = crabKind(row)
+  const g = detail?.git
+  const meta = [h('span', null, row.dir), h('span', null, row.origin === 'desktop' ? 'App' : 'Terminale')]
+  if (g) {
+    const sync = g.upstream ? ` ↑${g.ahead} ↓${g.behind}` : ''
+    meta.push(h('span', { class: 'branch' }, `${g.branch ?? `HEAD ${g.head ?? ''}`}${sync}`))
+  }
+  if (row.ledger) meta.push(h('span', { class: 'numbers' }, `${tokens(row.ledger.fresh)} token · ${usd(row.ledger.usd)}`))
+  const st = statusOf(row)
+  return h('section', { class: `dhead s-${kind}` },
+    h('span', { class: 'crab', 'aria-hidden': 'true' }, sprite(row.crab, '')),
+    h('div', { class: 'who' },
+      h('h2', null, row.title),
+      h('div', { class: 'meta' }, meta),
+      h('span', { class: 'pill' }, `${SHORT[kind]} · ${ago(now - row.since)}`),
+    ),
+    st ? h('div', { class: `status ${st.cls}`, role: 'status' }, st.text) : null,
+    actionButtons(row, { canOpen: row.origin === 'desktop', busy: isBusy(row), openLabel: 'Apri la conversazione nell’app' }),
+  )
+}
+
+function tabsBar(detail) {
+  const files = detail?.git?.totals?.files
+  return h('div', { class: 'tabs', role: 'tablist' }, TABS.map(([key, label, ic]) =>
+    h('button', {
+      class: 'tab', type: 'button', role: 'tab', id: `tab-${key}`, 'data-focus': `tab:${key}`,
+      'aria-selected': String(ui.tab === key), 'aria-controls': 'tabpanel',
+      onclick: () => { ui.tab = key; render(); if (key === 'graph') loadGraph() },
+    }, icon(ic), label, key === 'changes' && files ? h('span', { class: 'n' }, String(files)) : null),
+  ))
+}
+
+function runPanel(row, detail, now) {
+  const parts = []
+  if (detail?.prompt) {
+    parts.push(h('section', { class: 'box' },
+      h('div', { class: 'files-head' }, h('h3', null, 'Ultima richiesta'), detail.prompt.at ? h('span', { class: 'sub' }, hhmmss(Date.parse(detail.prompt.at))) : null),
+      h('div', { class: 'prompt' }, detail.prompt.text),
+    ))
+  }
+  const agents = row.agents || []
+  if (agents.length > 0) {
+    parts.push(h('section', { class: 'box' },
+      h('h3', null, `Agenti (${agents.filter(a => a.running).length} al lavoro, ${agents.length} recenti)`),
+      agents.map(a => agentRow(row, a, now)),
+    ))
+  }
+  const steps = (detail?.steps || []).slice().reverse()
+  parts.push(h('section', { class: 'box' },
+    h('h3', null, 'Passi, dal più recente'),
+    steps.length === 0
+      ? h('p', { class: 'sub' }, detail ? 'Nessun passo ancora.' : 'Carico i passi…')
+      : h('ol', { class: 'timeline' }, steps.map(s => h('li', { class: s.kind },
+          h('time', null, s.at ? hhmmss(Date.parse(s.at)) : ''),
+          s.kind === 'tool' ? h('span', { class: 'who-k' }, toolChip(s.name))
+            : h('span', { class: `who-k k-${s.kind}` }, s.kind === 'user' ? 'Tu' : 'Claude'),
+          h('span', { class: 'txt' }, s.text),
+        ))),
+  ))
+  return parts
+}
+
+function blocks(added, removed) {
+  const total = (added || 0) + (removed || 0)
+  const colored = Math.min(5, total)
+  const green = total ? Math.round(((added || 0) / total) * colored) : 0
+  return h('span', { class: 'blocks', 'aria-hidden': 'true' },
+    Array.from({ length: 5 }, (_, i) => h('i', { class: i < green ? 'a' : i < colored ? 'r' : '' })))
+}
+
+const fileKey = f => `${f.path}|${f.status}|${f.added}|${f.removed}`
+
+function diffView(f) {
+  const entry = ui.diffs.get(f.path)
+  if (!entry || entry.loading) return h('div', { class: 'diff' }, h('div', { class: 'note' }, 'Carico il diff…'))
+  if (entry.error) return h('div', { class: 'diff' }, h('div', { class: 'note' }, entry.error))
+  const d = entry.data
+  if (d.isBinary) return h('div', { class: 'diff' }, h('div', { class: 'note' }, 'File binario: nessun diff da mostrare.'))
+  if (d.hunks.length === 0) return h('div', { class: 'diff' }, h('div', { class: 'note' }, f.status === 'renamed' ? 'Solo rinominato, contenuto uguale.' : 'Nessuna riga cambiata.'))
+  const rows = []
+  for (const hunk of d.hunks) {
+    rows.push(h('tr', { class: 'hunk' }, h('td', { class: 'no' }), h('td', { class: 'no' }), h('td', { colspan: 2 }, hunk.header)))
+    for (const l of hunk.lines) {
+      rows.push(h('tr', { class: l.kind },
+        h('td', { class: 'no' }, l.old ?? ''),
+        h('td', { class: 'no' }, l.new ?? ''),
+        h('td', { class: 'sg' }, l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ' '),
+        h('td', null, l.text),
+      ))
+    }
+  }
+  return h('div', { class: 'diff' },
+    h('table', null, h('tbody', null, rows)),
+    d.isTruncated ? h('div', { class: 'note' }, 'Diff troppo lungo: mostro solo l’inizio.') : null,
+  )
+}
+
+function changesPanel(row, detail) {
+  if (!detail) return [h('p', { class: 'sub' }, 'Carico le modifiche…')]
+  if (!detail.git) {
+    return [h('div', { class: 'empty' }, detail.gitError ? `Git non risponde: ${detail.gitError}` : 'La cartella di questa sessione non è un repository git.')]
+  }
+  const g = detail.git
+  if (g.files.length === 0) return [h('div', { class: 'empty' }, `Nessuna modifica rispetto all’ultimo commit${g.head ? ` (${g.head})` : ''}.`)]
+  const files = g.files.map(f => {
+    const [letter, label] = FILE_STATUS[f.status] || ['?', f.status]
+    const open = ui.openFiles.has(f.path)
+    const cut = f.path.lastIndexOf('/')
+    const dir = cut >= 0 ? f.path.slice(0, cut + 1) : ''
+    const base = f.path.slice(cut + 1)
+    return h('div', { class: 'file' },
+      h('button', {
+        class: 'file-row', type: 'button', 'aria-expanded': String(open), 'data-focus': `file:${f.path}`, title: label,
+        onclick: () => toggleFile(row, f),
+      },
+        h('span', { class: `fs fs-${f.status}`, 'aria-label': label }, letter),
+        h('span', { class: 'fpath' },
+          f.oldPath ? h('span', { class: 'dir' }, `${f.oldPath} → `) : null,
+          h('span', { class: 'dir' }, dir), base,
+          f.status === 'untracked' ? h('small', null, 'nuovo') : null,
+        ),
+        h('span', { class: 'counts-f' },
+          f.added === null ? h('span', { class: 'sub' }, 'binario') : [
+            h('span', { class: 'plus' }, `+${num(f.added)}`),
+            h('span', { class: 'minus' }, `−${num(f.removed || 0)}`),
+          ]),
+        blocks(f.added, f.removed),
+      ),
+      open ? diffView(f) : null,
+    )
+  })
+  return [
+    h('div', { class: 'files-head' },
+      h('strong', null, `${num(g.totals.files)} ${g.totals.files === 1 ? 'file modificato' : 'file modificati'}`),
+      h('span', { class: 'plus' }, `+${num(g.totals.added)}`),
+      h('span', { class: 'minus' }, `−${num(g.totals.removed)}`),
+      h('span', { class: 'sub' }, `rispetto a ${g.head ?? 'nessun commit'}${g.branch ? ` su ${g.branch}` : ''}`),
+      g.isTruncated ? h('span', { class: 'sub' }, '· mostro i primi 500') : null,
+    ),
+    h('div', { class: 'files' }, files),
+  ]
+}
+
+function refBadge(ref) {
+  if (ref.startsWith('HEAD -> ')) return h('span', { class: 'ref headref' }, ref.slice(8))
+  if (ref === 'HEAD') return h('span', { class: 'ref headref' }, 'HEAD')
+  if (ref.startsWith('tag: ')) return h('span', { class: 'ref tag' }, ref.slice(5))
+  return h('span', { class: `ref${ref.includes('/') ? '' : ' local'}` }, ref)
+}
+
+const LANE_W = 14
+const ROW_H = 28
+function graphCell(row, lanes) {
+  const width = lanes * LANE_W + 6
+  const svg = svgEl('svg', { width, height: ROW_H, viewBox: `0 0 ${width} ${ROW_H}`, 'aria-hidden': 'true' })
+  const x = lane => lane * LANE_W + LANE_W / 2
+  for (const s of row.segments) {
+    const x1 = x(s.x1), y1 = s.y1 * ROW_H, x2 = x(s.x2), y2 = s.y2 * ROW_H
+    const ym = (y1 + y2) / 2
+    const d = x1 === x2 ? `M${x1} ${y1}L${x2} ${y2}` : `M${x1} ${y1}C${x1} ${ym} ${x2} ${ym} ${x2} ${y2}`
+    svg.append(svgEl('path', { d, fill: 'none', stroke: `var(--lane${s.lane % 6})`, 'stroke-width': 2, 'stroke-linecap': 'round' }))
+  }
+  const cx = x(row.col)
+  if (row.isHead) svg.append(svgEl('circle', { cx, cy: ROW_H / 2, r: 6.5, fill: 'var(--surface)', stroke: 'var(--coral)', 'stroke-width': 2 }))
+  svg.append(svgEl('circle', { cx, cy: ROW_H / 2, r: 4, fill: `var(--lane${row.col % 6})`, stroke: 'var(--surface)', 'stroke-width': 1.5 }))
+  return svg
+}
+
+function graphPanel(row, detail) {
+  if (detail && !detail.git) return [h('div', { class: 'empty' }, 'La cartella di questa sessione non è un repository git.')]
+  const gr = ui.graph
+  const bar = h('div', { class: 'files-head' },
+    h('strong', null, 'Commit di tutti i rami'),
+    gr?.data ? h('span', { class: 'sub' }, `${gr.data.rows.length} più recenti`) : null,
+    h('button', { class: 'btn', type: 'button', 'data-focus': 'graph:refresh', onclick: () => loadGraph(true) }, 'Aggiorna'),
+  )
+  if (!gr || gr.loading) return [bar, h('p', { class: 'sub' }, 'Carico il grafo…')]
+  if (gr.error) return [bar, h('div', { class: 'empty' }, gr.error)]
+  const now = Date.now()
+  return [bar, h('div', { class: 'graph' }, h('table', null, h('tbody', null, gr.data.rows.map(c =>
+    h('tr', { class: c.isHead ? 'is-head' : '' },
+      h('td', { class: 'g' }, graphCell(c, gr.data.lanes)),
+      h('td', { class: 'subj', title: c.subject }, c.refs.map(refBadge), c.subject),
+      h('td', { class: 'au' }, c.author),
+      h('td', { class: 'tm', title: shortDate(c.time) }, now - c.time < 7 * 86400e3 ? `${ago(now - c.time)} fa` : shortDate(c.time)),
+      h('td', { class: 'sha' }, c.short),
+    ),
+  ))))]
+}
+
+function sessionView(snap, now) {
+  const rows = snap?.rows || []
+  const row = rows.find(r => r.id === ui.focus)
+  const detail = snap?.detail?.id === ui.focus ? snap.detail : undefined
+  let main
+  if (!snap) {
+    main = [h('p', { class: 'sub' }, 'Collegamento…')]
+  } else if (!row) {
+    main = [h('div', { class: 'empty' }, 'Questa sessione non è più aperta.'), h('button', { class: 'btn', type: 'button', onclick: () => go(null) }, '← Dashboard')]
+  } else {
+    const panel = ui.tab === 'changes' ? changesPanel(row, detail) : ui.tab === 'graph' ? graphPanel(row, detail) : runPanel(row, detail, now)
+    main = [
+      detailHead(row, detail, now),
+      tabsBar(detail),
+      h('div', { class: 'panel', id: 'tabpanel', role: 'tabpanel', 'aria-labelledby': `tab-${ui.tab}` }, panel),
+    ]
+  }
+  return [h('div', { class: 'split' }, railView(rows, now), h('div', { class: 'detail-main' }, main))]
+}
+
+// ---------------------------------------------------------------- agents popover
+
+function togglePopover(id) {
+  ui.popover = ui.popover === id ? null : id
+  render()
+  if (ui.popover) document.getElementById('agentPop').querySelector('.agent, .close')?.focus({ preventScroll: true })
+}
+
+function closePopover({ refocus } = {}) {
+  if (!ui.popover) return
+  const id = ui.popover
+  ui.popover = null
+  render()
+  if (refocus) document.querySelector(`[data-pop-toggle="${CSS.escape(id)}"]`)?.focus({ preventScroll: true })
+}
+
+// Rebuilt with each update, so its agents stay live; the box itself stays, and so does its scroll.
+function renderPopover(snap, now) {
+  const pop = document.getElementById('agentPop')
+  const row = !ui.focus && ui.popover ? snap?.rows?.find(r => r.id === ui.popover) : undefined
+  if (!row || !(row.agents || []).length) {
+    ui.popover = null
+    pop.hidden = true
+    pop.replaceChildren()
+    return
+  }
+  const agents = row.agents
+  const running = agents.filter(a => a.running).length
+  const scroll = pop.scrollTop
+  pop.replaceChildren(
+    h('header', null,
+      h('h3', null, row.title),
+      h('span', { class: 'sub' }, running > 0 ? `${running} al lavoro · ${agents.length} recenti` : `${agents.length} recenti, nessuno al lavoro`),
+      h('button', { class: 'close', type: 'button', 'aria-label': 'Chiudi', 'data-focus': 'pop:close', onclick: () => closePopover({ refocus: true }) }, '×'),
+    ),
+    ...agents.map(a => agentRow(row, a, now)),
+  )
+  pop.hidden = false
+  pop.scrollTop = scroll
+  placePopover()
+}
+
+// Beside the card, on the side with room; below or above it on a narrow screen; always on screen.
+function placePopover() {
+  const pop = document.getElementById('agentPop')
+  if (pop.hidden || !ui.popover) return
+  const card = document.querySelector(`[data-card="${CSS.escape(ui.popover)}"]`)
+  if (!card) return
+  const r = card.getBoundingClientRect()
+  const vw = document.documentElement.clientWidth
+  const vh = window.innerHeight
+  const m = 16
+  const gap = 10
+  const w = pop.offsetWidth
+  const ph = pop.offsetHeight
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi))
+  let left
+  let top
+  if (r.right + gap + w <= vw - m) {
+    left = r.right + gap
+    top = r.top
+  } else if (r.left - gap - w >= m) {
+    left = r.left - gap - w
+    top = r.top
+  } else {
+    left = r.left
+    top = r.bottom + gap + ph <= vh - m || r.top - gap - ph < m ? r.bottom + gap : r.top - gap - ph
+  }
+  pop.style.left = `${clamp(left, m, vw - m - w)}px`
+  pop.style.top = `${clamp(top, m, Math.max(m, vh - m - ph))}px`
+}
+
+window.addEventListener('resize', placePopover)
+window.addEventListener('scroll', placePopover, { capture: true, passive: true })
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && ui.popover && !document.querySelector('dialog[open]')) closePopover({ refocus: true }) })
+// a click elsewhere closes it; not one in the popover, on its own toggle, or in the agent's dialog it opened
+document.addEventListener('pointerdown', e => {
+  if (!ui.popover || !(e.target instanceof Element)) return
+  if (e.target.closest('#agentPop, [data-pop-toggle], dialog')) return
+  closePopover()
+})
+
+// ---------------------------------------------------------------- render
+
+function render() {
+  const snap = ui.snap || (ui.conn === 'live' || ui.focus ? null : EXAMPLE)
+  const now = Date.now()
+  renderCounts(ui.snap)
+  renderLimits(snap)
+  document.getElementById('summary').hidden = !!ui.focus
+
+  const focused = document.activeElement?.getAttribute?.('data-focus')
+  const board = document.getElementById('board')
+  board.replaceChildren(...(ui.focus ? sessionView(ui.snap, now) : boardView(snap, now)))
+  renderPopover(snap, now)
+  if (focused) document.querySelector(`[data-focus="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true })
+
+  const live = document.getElementById('live')
+  live.dataset.state = ui.conn
+  document.getElementById('liveText').textContent =
+    ui.conn === 'live' ? `In diretta · ${hhmmss(ui.lastOk)}`
+    : ui.conn === 'retrying' ? 'Riconnessione…'
+    : ui.conn === 'offline' ? 'Server locale non raggiungibile'
+    : ui.conn === 'denied' ? 'Accesso non concesso'
+    : ui.conn === 'nohost' ? 'Fuori dall’app desktop'
+    : 'Collegamento al server locale…'
+}
+
+function showNotice(kind) {
+  const el = document.getElementById('notice')
+  if (!kind) { el.hidden = true; return }
+  const retry = h('button', { class: 'btn primary', type: 'button', onclick: () => { showNotice(null); startLoop() } }, 'Riprova')
+  let body
+  if (kind === 'nohost') {
+    body = [
+      h('h2', null, 'Apri questa pagina nell’app desktop Claude'),
+      h('p', null, 'Le sessioni arrivano dal server locale crab-sessions, che l’app desktop raggiunge sul tuo Mac. Nel browser la pagina mostra solo l’esempio qui sotto.'),
+    ]
+  } else if (kind === 'denied') {
+    body = [
+      h('h2', null, 'La pagina non ha accesso al server locale'),
+      h('p', null, 'Consenti crab-sessions per questa pagina dal menu Autorizzazioni dell’artifact, poi riprova.'),
+      h('div', { class: 'row' }, retry, h('button', { class: 'btn', type: 'button', onclick: managePermissions }, 'Apri autorizzazioni')),
+    ]
+  } else {
+    body = [
+      h('h2', null, 'Il server locale crab-sessions non risponde'),
+      h('p', null, 'Questa pagina raggiunge il Mac solo quando è aperta dentro l’app desktop Claude, nel pannello Artifact di una sessione: in un browser non può. Se è già nell’app, controlla che l’estensione crab-sessions sia attiva in Impostazioni → Estensioni, poi Riprova.'),
+      h('p', null, 'L’estensione si crea con node …/crab-sessions/server/build-extension.ts e si installa con un doppio click su dist/crab-sessions.mcpb.'),
+      h('div', { class: 'row' }, retry),
+    ]
+  }
+  el.className = `notice${kind === 'offline' ? ' bad' : ''}`
+  el.replaceChildren(...body)
+  el.hidden = false
+}
+
+async function managePermissions() {
+  try {
+    const permissions = await window.claude?.use?.('permissions')
+    await permissions?.manage()
+  } catch {
+    toast('Apri il menu Autorizzazioni dell’artifact per consentire crab-sessions.')
+  }
+}
+
+// ---------------------------------------------------------------- live data
+
+async function startLoop() {
+  if (ui.loopRunning || !mcp) return
+  ui.loopRunning = true
+  let failures = 0
+  try {
+    for (;;) {
+      if (document.hidden) await new Promise(r => document.addEventListener('visibilitychange', r, { once: true }))
+      const started = Date.now()
+      const focus = ui.focus
+      const ctrl = new AbortController()
+      ui.wake = () => ctrl.abort()
+      try {
+        const input = { since: ui.snap?.focus === focus ? ui.snap?.version : undefined, have: Object.keys(ui.sprites) }
+        if (focus) input.focus = focus
+        const res = await mcp.callTool(SERVER, 'sessions_watch', input, { cache: false, signal: ctrl.signal })
+        const p = res.payload
+        if (!p || !Array.isArray(p.rows)) throw { code: 'upstream_error', message: 'Risposta del server non valida' }
+        Object.assign(ui.sprites, p.sprites || {})
+        for (const r of p.rows) if (ui.pending[r.id] && r.action && r.action.at >= ui.pending[r.id].at - 2000) delete ui.pending[r.id]
+        p.focus = focus
+        ui.snap = p
+        ui.lastOk = Date.now()
+        ui.conn = 'live'
+        failures = 0
+        showNotice(null)
+        afterSnapshot(p)
+        render()
+      } catch (err) {
+        // our own abort: the person opened another session, ask again right away
+        if (ctrl.signal.aborted) { await sleep(300); continue }
+        const code = err?.code
+        if (code === 'server_not_connected' || code === 'server_not_found') {
+          ui.conn = 'offline'; render(); showNotice('offline'); return
+        }
+        if (['not_in_manifest', 'not_granted', 'capability_disabled', 'capability_removed', 'blocked_by_policy', 'approval_required', 'cancelled'].includes(code)) {
+          ui.conn = 'denied'; render(); showNotice('denied'); return
+        }
+        failures++
+        ui.conn = 'retrying'
+        render()
+        const wait = err?.retryable && err?.retryAfterMs ? err.retryAfterMs : Math.min(30000, 2000 * 2 ** Math.min(failures, 4))
+        await sleep(wait + Math.random() * 800)
+        continue
+      } finally {
+        ui.wake = null
+      }
+      const gap = MIN_GAP_MS - (Date.now() - started)
+      if (gap > 0) {
+        // a switch to another session cuts the wait short
+        await new Promise(resolve => { const t = setTimeout(resolve, gap); ui.wake = () => { clearTimeout(t); resolve() } })
+        ui.wake = null
+      }
+    }
+  } finally {
+    ui.loopRunning = false
+  }
+}
+
+// Open diffs follow their file: one whose line counts changed is read again.
+function afterSnapshot(p) {
+  const files = p.detail?.id === ui.focus ? p.detail?.git?.files || [] : []
+  for (const path of [...ui.openFiles]) {
+    const f = files.find(x => x.path === path)
+    if (!f) { ui.openFiles.delete(path); ui.diffs.delete(path); continue }
+    const entry = ui.diffs.get(path)
+    if (entry && !entry.loading && entry.key !== fileKey(f)) loadDiff(p.rows.find(r => r.id === ui.focus), f)
+  }
+  if (ui.tab === 'graph' && ui.graph?.data && p.detail?.git && ui.graph.head !== p.detail.git.head) loadGraph(true)
+}
+
+function errorText(err) {
+  if (err?.code === 'cancelled') return 'Annullato.'
+  if (err?.code === 'approval_required') return 'Serve la tua approvazione per questa azione.'
+  if (err?.code === 'server_not_connected') return 'Il server locale non risponde.'
+  return err?.message || 'Qualcosa non ha funzionato.'
+}
+
+function toggleFile(row, f) {
+  if (ui.openFiles.has(f.path)) { ui.openFiles.delete(f.path); render(); return }
+  ui.openFiles.add(f.path)
+  if (ui.diffs.get(f.path)?.key !== fileKey(f)) loadDiff(row, f)
+  render()
+}
+
+async function loadDiff(row, f) {
+  if (!mcp || !row) return
+  const key = fileKey(f)
+  ui.diffs.set(f.path, { key, loading: true })
+  render()
+  try {
+    const res = await mcp.callTool(SERVER, 'session_diff', { sessionId: row.id, path: f.path }, { cache: false })
+    if (ui.diffs.get(f.path)?.key === key) ui.diffs.set(f.path, { key, data: res.payload })
+  } catch (err) {
+    if (ui.diffs.get(f.path)?.key === key) ui.diffs.set(f.path, { key, error: errorText(err) })
+  }
+  render()
+}
+
+async function loadGraph(isRefresh) {
+  const id = ui.focus
+  if (!mcp || !id || (ui.graph && !isRefresh && (ui.graph.loading || ui.graph.data))) return
+  const head = ui.snap?.detail?.git?.head ?? null
+  ui.graph = { ...(ui.graph || {}), loading: !ui.graph?.data }
+  render()
+  try {
+    const res = await mcp.callTool(SERVER, 'git_graph', { sessionId: id }, { cache: false })
+    if (ui.focus === id) ui.graph = { data: res.payload, head }
+  } catch (err) {
+    if (ui.focus === id) ui.graph = { error: errorText(err), head }
+  }
+  render()
+}
+
+async function openSession(row) {
+  if (!mcp || row.example) return
+  try {
+    await mcp.callTool(SERVER, 'session_open', { sessionId: row.id }, { cache: false })
+    toast(`Apro «${row.title}» nell’app`)
+  } catch (err) {
+    toast(errorText(err))
+  }
+}
+
+async function runAction(row, action, prompt) {
+  ui.pending[row.id] = { action, at: Date.now() }
+  render()
+  try {
+    const res = await mcp.callTool(SERVER, 'session_action', { sessionId: row.id, action, ...(prompt ? { prompt } : {}) }, { cache: false })
+    if (res.payload?.started) { delete ui.pending[row.id]; toast('Copia avviata in una nuova finestra del Terminale.') }
+  } catch (err) {
+    delete ui.pending[row.id]
+    toast(errorText(err))
+  }
+  render()
+}
+
+async function hideSession(row) {
+  if (!mcp || row.example) return
+  try {
+    await mcp.callTool(SERVER, 'session_action', { sessionId: row.id, action: 'hide' }, { cache: false })
+    if (ui.focus === row.id) go(null)
+    toast(`«${row.title}» nascosta: la ritrovi in fondo alla dashboard.`)
+  } catch (err) {
+    toast(errorText(err))
+  }
+}
+
+async function unhideSession(x) {
+  try {
+    await mcp.callTool(SERVER, 'session_action', { sessionId: x.id, action: 'unhide' }, { cache: false })
+  } catch (err) {
+    toast(errorText(err))
+  }
+}
+
+// ---------------------------------------------------------------- sheets
+
+function askArchive(row) {
+  sheet(close => [
+    h('h2', null, `Archiviare «${row.title}»?`),
+    h('p', null, 'La sessione si ferma e sparisce dall’elenco. La conversazione resta e si riapre dalla lista Archiviate dell’app. Non si archivia mentre sta lavorando o mentre è aperta sullo schermo.'),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn', value: 'cancel' }, 'Annulla'),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => { close(); runAction(row, 'archive') } }, icon('archive'), 'Archivia'),
+    ),
+  ])
+}
+
+function sheet(build) {
+  const dlg = document.getElementById('sheet')
+  const form = document.getElementById('sheetForm')
+  form.replaceChildren(...build(() => dlg.close()))
+  dlg.showModal()
+  form.querySelector('textarea, .primary')?.focus()
+}
+
+function askCompact(row) {
+  sheet(close => [
+    h('h2', null, `Compattare «${row.title}»?`),
+    h('p', null, 'Claude riduce la conversazione e libera il contesto (con jev-router lo fa Jev, togliendo le chiamate ai tool superate). Se la sessione sta lavorando, parte appena si ferma.'),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn', value: 'cancel' }, 'Annulla'),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => { close(); runAction(row, 'compact') } }, 'Compatta'),
+    ),
+  ])
+}
+
+function askClear(row) {
+  const back = row.origin === 'desktop' ? 'con «Riprendi sessione precedente»' : 'con /resume'
+  sheet(close => [
+    h('h2', null, `Pulire «${row.title}»?`),
+    h('p', null, `La conversazione riparte vuota, nella stessa cartella e con le stesse impostazioni. Quella di prima si recupera ${back}.`),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn', value: 'cancel' }, 'Annulla'),
+      h('button', { class: 'btn danger primary', type: 'button', onclick: () => { close(); runAction(row, 'clear') } }, 'Pulisci'),
+    ),
+  ])
+}
+
+function askSplit(row) {
+  const where = row.origin === 'desktop' ? 'Si apre come nuova sessione nell’app.' : 'Si apre in una nuova finestra del Terminale.'
+  // checked by "Avvia copia" itself: a required field would also block "Annulla", which closes by submitting
+  const area = h('textarea', { id: 'splitPrompt', placeholder: 'Es. scrivi i test per il modulo export mentre qui continuo il refactor' })
+  sheet(close => [
+    h('h2', null, `Dividere «${row.title}»`),
+    h('p', null, `La copia parte con tutta la conversazione fin qui e lavora in parallelo. ${where}`),
+    h('label', { for: 'splitPrompt' }, 'Cosa deve fare la copia?'),
+    area,
+    h('div', { class: 'row' },
+      h('button', { class: 'btn', value: 'cancel' }, 'Annulla'),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => {
+        const text = area.value.trim()
+        if (!text) { area.focus(); toast('Scrivi cosa deve fare la copia.'); return }
+        close(); runAction(row, 'split', text)
+      } }, 'Avvia copia'),
+    ),
+  ])
+}
+
+async function openAgent(row, a) {
+  if (!mcp) return
+  const dlg = document.getElementById('agentSheet')
+  const box = document.getElementById('agentDetail')
+  const closeBtn = h('button', { class: 'btn', type: 'button', onclick: () => dlg.close() }, 'Chiudi')
+  box.replaceChildren(h('header', null, h('h2', null, a.type), h('p', null, a.desc || '')), h('p', null, 'Carico il dettaglio…'), h('div', { class: 'row' }, closeBtn))
+  if (!dlg.open) dlg.showModal()
+  try {
+    const res = await mcp.callTool(SERVER, 'agent_detail', { sessionId: row.id, agentId: a.id }, { cache: false })
+    renderAgent(row, a, res.payload)
+  } catch (err) {
+    box.replaceChildren(h('header', null, h('h2', null, a.type)), h('p', null, errorText(err)), h('div', { class: 'row' }, closeBtn))
+  }
+}
+
+function renderAgent(row, a, d) {
+  const dlg = document.getElementById('agentSheet')
+  const box = document.getElementById('agentDetail')
+  const u = d.usage || {}
+  const steps = (d.steps || []).slice().reverse()
+  box.replaceChildren(
+    h('header', null,
+      h('h2', null, d.type),
+      h('p', null, d.description || ''),
+      h('span', { class: 'meta' }, h('span', null, `in «${row.title}»`), h('span', null, d.finished ? 'Finito' : a.running ? 'Al lavoro' : 'Fermo'), d.background ? h('span', null, 'In background') : null),
+    ),
+    h('div', { class: 'kv' },
+      h('div', null, h('span', null, 'Modello'), h('b', null, modelName(d.model) || '–')),
+      h('div', null, h('span', null, 'Iniziato'), h('b', null, d.startedAt ? hhmmss(Date.parse(d.startedAt)) : '–')),
+      h('div', null, h('span', null, 'Ultimo passo'), h('b', null, d.lastAt ? hhmmss(Date.parse(d.lastAt)) : '–')),
+      h('div', null, h('span', null, 'Token nuovi'), h('b', null, tokens((u.input || 0) + (u.output || 0) + (u.cacheWrite || 0)))),
+      h('div', null, h('span', null, 'Da cache'), h('b', null, tokens(u.cacheRead || 0))),
+    ),
+    d.prompt ? h('details', null, h('summary', null, 'Incarico'), h('pre', null, d.prompt)) : null,
+    h('div', null,
+      h('h3', { style: 'margin:0 0 6px;font-size:13px' }, `Ultimi passi (${steps.length})`),
+      steps.length ? h('ol', { class: 'steps' }, steps.map(s => h('li', null,
+        h('time', null, s.at ? hhmmss(Date.parse(s.at)).slice(0, 5) : ''),
+        h('span', { class: 'txt' }, s.kind === 'tool' ? toolChip(s.name) : null, s.text),
+      ))) : h('p', null, 'Nessun passo ancora.'),
+    ),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn', type: 'button', onclick: () => openAgent(row, a) }, 'Aggiorna'),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => dlg.close() }, 'Chiudi'),
+    ),
+  )
+}
+
+// ---------------------------------------------------------------- boot
+
+render()
+setInterval(() => { if (ui.snap) render() }, 15000)
+;(async () => {
+  if (!window.claude?.use) { ui.conn = 'nohost'; render(); showNotice('nohost'); return }
+  mcp = await window.claude.use('mcp').catch(() => null)
+  if (!mcp) { ui.conn = 'nohost'; render(); showNotice('nohost'); return }
+  startLoop()
+})()
+</script>

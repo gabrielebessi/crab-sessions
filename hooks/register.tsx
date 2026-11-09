@@ -1,9 +1,22 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { AgentRow, Ledger, Limit, SessionRow, SessionsView } from '../types'
+import {
+  agentSkin,
+  collectSessions,
+  commandFile,
+  COMMAND_TTL_MS,
+  crabState,
+  flagFile,
+  ledgerFile,
+  limitsFile,
+  readFlag,
+  resultFile,
+  stampedLimits,
+} from '../core/sessions'
+import type { Command, CommandResult, Flag, Io } from '../core/sessions'
+import type { Ledger, Limit, SessionsView } from '../types'
 import { crabSvg, pickSkin } from './sprites'
-import type { CrabState } from './sprites'
 
 const PANE = 'crab-sessions'
 const REFRESH_MS = 5000
@@ -13,7 +26,7 @@ const REFRESH_MS = 5000
 const view = atom(
   { plugin: 'crab-sessions', key: 'view' } as const,
   { rows: [], limits: [], at: 0 },
-  { shape: 'view-3' },
+  { shape: 'view-4' },
 )
 
 // session ids whose agent list the person opened
@@ -22,60 +35,17 @@ const open = atom({ plugin: 'crab-sessions', key: 'open' } as const, [], { shape
 const fmtTokens = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(1).replace('.', ',')} M` : n >= 1e3 ? `${Math.round(n / 1e3)} k` : String(n)
 
-const AGENT_WINDOW_MS = 30 * 60 * 1000
-const AGENT_RUNNING_MS = 120 * 1000
+const PANE_AGENTS = { windowMs: 30 * 60 * 1000, max: 12 }
+const INBOX_MS = 1500
 
-// Agents of one session: its transcripts keep one meta file per agent.
-async function agentsOf($: EngineInterface, home: string, cwd: string, id: string, now: number): Promise<AgentRow[]> {
-  const dir = `${home}/.claude/projects/${cwd.replace(/[^a-zA-Z0-9]/g, '-')}/${id}/subagents`
-  const entries = await $.fs.list(dir).catch(() => [])
-  const recent = entries
-    .filter(x => x.name.endsWith('.jsonl') && now - x.mtimeMs < AGENT_WINDOW_MS)
-    .sort((a, b) => b.mtimeMs - a.mtimeMs)
-    .slice(0, 12)
-  const out: AgentRow[] = []
-  for (const file of recent) {
-    const agentId = file.name.replace(/\.jsonl$/, '')
-    try {
-      const meta = JSON.parse(await $.fs.read(`${dir}/${agentId}.meta.json`)) as {
-        agentType?: string
-        description?: string
-        finished?: boolean
-      }
-      out.push({
-        id: agentId,
-        type: meta.agentType ?? 'agent',
-        desc: meta.description ?? '',
-        running: meta.finished !== true && now - file.mtimeMs < AGENT_RUNNING_MS,
-        at: file.mtimeMs,
-      })
-    } catch {
-      // a half-written meta file: skipped until the next refresh
-    }
-  }
-  return out.sort((a, b) => Number(b.running) - Number(a.running) || b.at - a.at)
-}
+// $.fs as the shared reader wants it
+const ioOf = ($: EngineInterface): Io => ({
+  list: dir => $.fs.list(dir),
+  read: path => $.fs.read(path),
+  exists: path => $.fs.exists(path),
+})
 
-type Registry = {
-  pid: number
-  sessionId: string
-  cwd: string
-  name?: string
-  status?: string
-  entrypoint?: string
-  statusUpdatedAt?: number
-  updatedAt?: number
-  startedAt?: number
-  messagingSocketPath?: string
-}
-
-type Flag = 'question' | 'approval'
-
-// A session left waiting this long stops waving and falls asleep.
-const SLEEP_AFTER_MS = 10 * 60 * 1000
 const TRACE_LINES = 300
-
-const flagFile = (home: string, id: string) => `${home}/.claude/crab-sessions/ask-${id}.txt`
 
 // The registry cannot tell a question or a permission prompt from a busy turn:
 // each session writes what it waits on, and every panel reads it.
@@ -86,12 +56,6 @@ async function setFlag($: EngineInterface, kind?: Flag) {
   } catch {
     // a flag must never break a turn
   }
-}
-
-async function readFlag($: EngineInterface, home: string, id: string): Promise<Flag | undefined> {
-  const kind = (await $.fs.read(flagFile(home, id)).catch(() => '0')).split(':')[0]
-
-  return kind === 'question' || kind === 'approval' ? kind : undefined
 }
 
 // Trial log of the events that set or clear the flag: ~/.claude/crab-sessions/events.log
@@ -111,17 +75,11 @@ async function trace($: EngineInterface, name: string, detail = '') {
 // Drops the flag when something proves the wait is over; logs only when it had one.
 async function clearFlag($: EngineInterface, by: string) {
   const home = (await $.env.get('HOME')) ?? ''
-  const flag = await readFlag($, home, await $.session.id())
+  const flag = await readFlag(ioOf($), home, await $.session.id())
   if (!flag) return
   await setFlag($)
   await trace($, `clear(${flag})`, `by ${by}`)
 }
-
-const agentSkin = (type: string) => (/explore|fetch|search/i.test(type) ? 'research' : /plan/i.test(type) ? 'docs' : 'plain')
-
-const ORDER = { approval: 0, asking: 1, waiting: 2, working: 3 } as const
-
-const lastDir = (cwd: string) => cwd.split('/').filter(Boolean).pop() ?? cwd
 
 function ago(ms: number): string {
   const min = Math.max(0, Math.round(ms / 60000))
@@ -167,41 +125,18 @@ const stateLabel = {
   working: 'Sta lavorando',
 } as const
 const shortLabel = { approval: 'Permesso', asking: 'Domanda', waiting: 'Ti aspetta', working: 'Lavora' } as const
-const crabState = (state: keyof typeof stateTone, waitedMs: number): CrabState =>
-  state === 'waiting' ? (waitedMs >= SLEEP_AFTER_MS ? 'idle' : 'waiting') : state === 'working' ? 'working' : state
 
 const LIMIT_KINDS = ['five_hour', 'seven_day']
-
-type LimitsFile = { at: number; limits: Limit[] }
 
 // An idle session's own rate limits go stale: they refresh only when that session talks to the API.
 // So each session stamps what it saw right after a turn, and the panel shows the newest one of all.
 async function saveLimits($: EngineInterface, home: string, now: number) {
-  const usage = await $.session.usage().catch(() => undefined)
-  const limits: Limit[] = (usage?.rateLimits ?? [])
-    .filter(l => LIMIT_KINDS.includes(l.kind))
-    .map(l => ({ kind: l.kind, percent: l.percentUsed, resetsAt: l.resetsAt }))
+  const limits = await ownLimits($)
   if (limits.length === 0) return
-  const file: LimitsFile = { at: now, limits }
-  await $.fs.write(`${home}/.claude/crab-sessions/limits-${await $.session.id()}.json`, JSON.stringify(file))
+  await $.fs.write(limitsFile(home, await $.session.id()), JSON.stringify({ at: now, limits }))
 }
 
-async function freshestLimits($: EngineInterface, home: string): Promise<Limit[]> {
-  const dir = `${home}/.claude/crab-sessions`
-  const entries = await $.fs.list(dir).catch(() => [])
-  let best: LimitsFile | undefined
-  for (const entry of entries) {
-    if (!/^limits-.+\.json$/.test(entry.name)) continue
-    try {
-      const file = JSON.parse(await $.fs.read(`${dir}/${entry.name}`)) as LimitsFile
-      if (!best || file.at > best.at) best = file
-    } catch {
-      // half-written: skipped until the next refresh
-    }
-  }
-  if (best) return best.limits
-
-  // nothing stamped yet: this session's own reading, better than nothing
+async function ownLimits($: EngineInterface): Promise<Limit[]> {
   const usage = await $.session.usage().catch(() => undefined)
   return (usage?.rateLimits ?? [])
     .filter(l => LIMIT_KINDS.includes(l.kind))
@@ -210,54 +145,84 @@ async function freshestLimits($: EngineInterface, home: string): Promise<Limit[]
 
 async function refresh($: EngineInterface) {
   const home = (await $.env.get('HOME')) ?? ''
-  const dir = `${home}/.claude/sessions`
-  const own = await $.session.id()
+  const io = ioOf($)
   const now = await $.clock.now()
-  const rows: SessionRow[] = []
-
-  const entries = await $.fs.list(dir).catch(() => [])
-  for (const entry of entries) {
-    if (!entry.name.endsWith('.json')) continue
-    try {
-      const reg = JSON.parse(await $.fs.read(`${dir}/${entry.name}`)) as Registry
-      // a registry file whose process is gone leaves no socket behind
-      if (reg.messagingSocketPath && !(await $.fs.exists(reg.messagingSocketPath))) continue
-      const busy = reg.status === 'busy'
-      const flag = busy ? await readFlag($, home, reg.sessionId) : undefined
-      const state = flag === 'approval' ? 'approval' : flag === 'question' ? 'asking' : busy ? 'working' : 'waiting'
-      const title = reg.name || lastDir(reg.cwd)
-      rows.push({
-        id: reg.sessionId,
-        title,
-        dir: lastDir(reg.cwd),
-        origin: reg.entrypoint === 'claude-desktop' ? 'desktop' : 'cli',
-        state,
-        since: reg.statusUpdatedAt ?? reg.updatedAt ?? now,
-        skin: pickSkin(title, reg.cwd),
-        isOwn: reg.sessionId === own,
-        agents: await agentsOf($, home, reg.cwd, reg.sessionId, now),
-        ledger: await $.fs
-          .read(`${home}/.claude/crab-sessions/tokens-${reg.sessionId}.json`)
-          .then(text => JSON.parse(text) as Ledger)
-          .catch(() => undefined),
-      })
-    } catch {
-      // one unreadable file must not hide the others
-    }
-  }
-
-  rows.sort((a, b) => ORDER[a.state] - ORDER[b.state] || a.since - b.since)
-
-  const limits = await freshestLimits($, home)
+  const rows = await collectSessions(io, home, { now, ownId: await $.session.id(), agents: PANE_AGENTS, skinOf: pickSkin })
+  // nothing stamped yet: this session's own reading, better than nothing
+  const stamped = await stampedLimits(io, home)
+  const limits = stamped.length > 0 ? stamped : await ownLimits($)
 
   const next: SessionsView = { rows, limits, at: now }
   await update($, view, () => next)
 }
 
+// Commands the artifact queued for this session through the local MCP server: one file per
+// session, run here once, answered in a result file the artifact reads back.
+async function runInbox($: EngineInterface, inbox: { handled?: string; isBusy: boolean }) {
+  if (inbox.isBusy) return
+  const home = (await $.env.get('HOME')) ?? ''
+  const id = await $.session.id()
+  const cmd = await $.fs
+    .read(commandFile(home, id))
+    .then(text => JSON.parse(text) as Command)
+    .catch(() => undefined)
+  if (!cmd) return
+  inbox.handled ??= await $.fs
+    .read(resultFile(home, id))
+    .then(text => (JSON.parse(text) as CommandResult).id)
+    .catch(() => '')
+  if (cmd.id === inbox.handled) return
+  inbox.handled = cmd.id
+
+  const answer = async (status: CommandResult['status'], message?: string) => {
+    const result: CommandResult = { id: cmd.id, action: cmd.action, status, at: await $.clock.now(), message }
+    await $.fs.write(resultFile(home, id), JSON.stringify(result)).catch(() => undefined)
+  }
+  if ((await $.clock.now()) - cmd.at > COMMAND_TTL_MS) return answer('expired')
+
+  inbox.isBusy = true
+  await answer('running')
+  try {
+    if (cmd.action === 'compact') {
+      await $.command.run({ command: 'compact' })
+      await answer('done')
+    } else if (cmd.action === 'clear') {
+      // written first: once cleared, the session answers under a new id
+      await answer('done')
+      await $.command.run({ command: 'clear' })
+    } else if (cmd.action === 'split') {
+      // the desktop app forks this conversation into a new session with the task the person wrote
+      const res = await $.mcp.call('ccd_session', 'start_session', {
+        initiation: 'user_asked',
+        context: 'fork',
+        title: cmd.title ?? 'Copia',
+        prompt: cmd.prompt ?? '',
+      })
+      const text = res.content.map(b => ('text' in b && typeof b.text === 'string' ? b.text : '')).join(' ').trim()
+      await answer(res.isError ? 'error' : 'done', text.slice(0, 300) || undefined)
+    } else if (cmd.action === 'archive') {
+      // the app stops this session once archived: the answer may be the last thing it writes
+      const res = await $.mcp.call('ccd_session_mgmt', 'archive_session', { session_id: 'self', reason: 'Archiviata da Crab Sessions' })
+      const text = res.content.map(b => ('text' in b && typeof b.text === 'string' ? b.text : '')).join(' ').trim()
+      await answer(res.isError ? 'error' : 'done', text.slice(0, 300) || undefined)
+    }
+  } catch (err) {
+    await answer('error', err instanceof Error ? err.message : String(err))
+  } finally {
+    inbox.isBusy = false
+  }
+}
+
 export const register: Register = on => {
   let timer: { cancel: () => void } | undefined
+  let inboxTimer: { cancel: () => void } | undefined
+  const inbox: { handled?: string; isBusy: boolean } = { isBusy: false }
 
   on('session.start', async ($, e, next) => {
+    // every session, the terminal's too, runs what the artifact asks of it
+    inboxTimer?.cancel()
+    inboxTimer = $.clock.every(INBOX_MS, () => void runInbox($, inbox))
+
     // The CLI's REPL starts on the terminal surface: it gets no panel, but its turns still feed the desktop panel.
     if (e.surface === 'terminal') return next(e)
 
@@ -282,7 +247,7 @@ export const register: Register = on => {
     const result = await next(e)
     try {
       const home = (await $.env.get('HOME')) ?? ''
-      const file = `${home}/.claude/crab-sessions/tokens-${await $.session.id()}.json`
+      const file = ledgerFile(home, await $.session.id())
       const old = await $.fs
         .read(file)
         .then(text => JSON.parse(text) as Ledger)

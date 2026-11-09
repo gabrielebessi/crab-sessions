@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 import { crabSvg, pickSkin, SKINS } from './hooks/sprites'
 
@@ -32,7 +32,7 @@ const VIEW = {
 }
 
 test('the pane shows limits and one card per session', async ($, on) => {
-  on('state.get', () => ({ value: { value: { shape: 'view-3', value: VIEW }, version: 1 } }))
+  on('state.get', () => ({ value: { value: { shape: 'view-4', value: VIEW }, version: 1 } }))
 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
 
@@ -50,7 +50,7 @@ test('the pane shows limits and one card per session', async ($, on) => {
 })
 
 test('the terminal draws a plain crab instead of the Svg', async ($, on) => {
-  on('state.get', () => ({ value: { value: { shape: 'view-3', value: VIEW }, version: 1 } }))
+  on('state.get', () => ({ value: { value: { shape: 'view-4', value: VIEW }, version: 1 } }))
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
 
@@ -70,7 +70,7 @@ test('a value an earlier version stored is declined and the pane says so', async
 })
 
 test('the agent list opens on a press of the dots line', async ($, on) => {
-  const store: Record<string, unknown> = { view: { shape: 'view-3', value: VIEW } }
+  const store: Record<string, unknown> = { view: { shape: 'view-4', value: VIEW } }
   on('state.get', (_, e) => ({ value: { value: store[e.key], version: 1 } }))
   on('state.set', (_, e) => {
     store[e.key] = e.value
@@ -111,4 +111,69 @@ test('each task gets its own skin, and every skin draws every state', () => {
     }
     if (skin !== 'plain') expect(crabSvg(skin, 'working')).not.toBe(plain)
   }
+})
+
+// The artifact's commands reach a session as a file the mod reads on its timer.
+test('a command the artifact queued runs once in its session and is answered', async ($, on) => {
+  const T = 1_800_000_000_000
+  const clock = mock.clock(on, { now: T })
+  mock.env(on, { HOME: '/h' })
+  const inbox = '/h/.claude/crab-sessions/inbox'
+  const files: Record<string, string> = {
+    [`${inbox}/s1.json`]: JSON.stringify({ id: 'c1', action: 'compact', at: T }),
+  }
+  const runs: string[] = []
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.read', (_, e) => (e.path in files ? { value: files[e.path] } : { deny: 'missing' }))
+  on('fs.write', (_, e) => {
+    files[e.path] = e.text
+    return { value: undefined }
+  })
+  on('command.run', (_, e) => {
+    runs.push(e.command)
+    return { text: '' }
+  })
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.advance(1500)
+  expect(runs).toEqual(['compact'])
+  expect(JSON.parse(files[`${inbox}/s1.result.json`])).toEqual(expect.objectContaining({ id: 'c1', status: 'done' }))
+
+  // already answered: not run again
+  await clock.advance(3000)
+  expect(runs).toEqual(['compact'])
+
+  // left in the inbox too long (the session was closed): answered, never run
+  files[`${inbox}/s1.json`] = JSON.stringify({ id: 'c2', action: 'clear', at: T - 10 * 60 * 1000 })
+  await clock.advance(1500)
+  expect(runs).toEqual(['compact'])
+  expect(JSON.parse(files[`${inbox}/s1.result.json`])).toEqual(expect.objectContaining({ id: 'c2', status: 'expired' }))
+})
+
+test('an archive command asks the app to archive the session it runs in', async ($, on) => {
+  const T = 1_800_000_000_000
+  const clock = mock.clock(on, { now: T })
+  mock.env(on, { HOME: '/h' })
+  const inbox = '/h/.claude/crab-sessions/inbox'
+  const files: Record<string, string> = {
+    [`${inbox}/s1.json`]: JSON.stringify({ id: 'c9', action: 'archive', at: T }),
+  }
+  const calls: { server: string; tool: string; args: Record<string, unknown> }[] = []
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.read', (_, e) => (e.path in files ? { value: files[e.path] } : { deny: 'missing' }))
+  on('fs.write', (_, e) => {
+    files[e.path] = e.text
+    return { value: undefined }
+  })
+  on('mcp.call', (_, e) => {
+    calls.push(e)
+    return { value: { content: [{ type: 'text', text: 'Archived.' }], isError: false } }
+  })
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(1500)
+  expect(calls).toEqual([expect.objectContaining({ server: 'ccd_session_mgmt', tool: 'archive_session', args: expect.objectContaining({ session_id: 'self' }) })])
+  expect(JSON.parse(files[`${inbox}/s1.result.json`])).toEqual(expect.objectContaining({ id: 'c9', status: 'done', message: 'Archived.' }))
 })
