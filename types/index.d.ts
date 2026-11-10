@@ -33,7 +33,11 @@ export type SessionRow = {
 
 export type Limit = { kind: string; percent: number; resetsAt?: string }
 
-export type SessionsView = { rows: SessionRow[]; limits: Limit[]; at: number }
+// Fable's weekly window has no reading a mod can get: counted from the transcripts on this Mac
+// since the weekly reset. `fresh` is input + output + cache writes, as in Ledger.
+export type FableWeek = { fresh: number; cached: number; replies: number; since: number; at: number }
+
+export type SessionsView = { rows: SessionRow[]; limits: Limit[]; at: number; fable?: FableWeek }
 
 declare module 'claude-code' {
   interface PluginState {

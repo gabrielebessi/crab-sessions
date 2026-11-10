@@ -88,6 +88,11 @@ def main(sheet_path: str, out_dir: str, html_path: str | None = None) -> None:
         icons[name] = rects
         (out / f'{name}.svg').write_text(svg(rects))
         icon.resize((GRID * 8, GRID * 8), Image.Resampling.NEAREST).save(out / f'{name}.preview.png')
+    # icons drawn by hand (desktop.py) are not on the sheet: kept as they are
+    previous = out / 'icons.json'
+    if previous.exists():
+        for name, rects in json.loads(previous.read_text())['icons'].items():
+            icons.setdefault(name, rects)
     data = json.dumps({'grid': GRID, 'icons': icons}, separators=(',', ':'))
     (out / 'icons.json').write_text(data)
     if html_path:

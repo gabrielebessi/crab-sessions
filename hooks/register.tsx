@@ -3,19 +3,25 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import {
   agentSkin,
+  claimFile,
   collectSessions,
   commandFile,
   COMMAND_TTL_MS,
   crabState,
+  FABLE_LIMIT,
+  fableLimitFile,
+  fableWeek,
   flagFile,
+  inboxDir,
   ledgerFile,
   limitsFile,
   readFlag,
   resultFile,
   stampedLimits,
+  weekStart,
 } from '../core/sessions'
-import type { Command, CommandResult, Flag, Io } from '../core/sessions'
-import type { Ledger, Limit, SessionsView } from '../types'
+import type { Claim, Command, CommandResult, Flag, Io } from '../core/sessions'
+import type { Ledger, Limit } from '../types'
 import { crabSvg, pickSkin } from './sprites'
 
 const PANE = 'crab-sessions'
@@ -43,6 +49,7 @@ const ioOf = ($: EngineInterface): Io => ({
   list: dir => $.fs.list(dir),
   read: path => $.fs.read(path),
   exists: path => $.fs.exists(path),
+  write: (path, text) => $.fs.write(path, text).then(() => undefined),
 })
 
 const TRACE_LINES = 300
@@ -143,17 +150,132 @@ async function ownLimits($: EngineInterface): Promise<Limit[]> {
     .map(l => ({ kind: l.kind, percent: l.percentUsed, resetsAt: l.resetsAt }))
 }
 
+// Fable's weekly window reaches no rate-limit reading of a mod, but the desktop app's usage card
+// has it: a session in the app reads it there, at most once a minute, and stamps it.
+const FABLE_LIMIT_EVERY_MS = 60_000
+const fableAsk = { at: -Infinity }
+
+type UsageCard = { plan?: { windows?: { label?: string; percentUsed?: number; resetsAt?: string }[] } }
+
+async function stampFableLimit($: EngineInterface, home: string, now: number) {
+  if (now - fableAsk.at < FABLE_LIMIT_EVERY_MS) return
+  fableAsk.at = now
+  try {
+    // a session outside the app has no such tool: the call fails and nothing is stamped
+    const res = await callApp($, 'ccd_session_mgmt', 'get_usage', {})
+    if (!res || res.isError) return
+    const card = JSON.parse(textOf(res)) as UsageCard
+    const w = card.plan?.windows?.find(x => /fable/i.test(x.label ?? ''))
+    if (typeof w?.percentUsed !== 'number') return
+    const limit: Limit = { kind: FABLE_LIMIT, percent: w.percentUsed, resetsAt: w.resetsAt }
+    await $.fs.write(fableLimitFile(home, await $.session.id()), JSON.stringify({ at: now, limits: [limit] }))
+  } catch {
+    // an unreadable card: the last stamp stands
+  }
+}
+
 async function refresh($: EngineInterface) {
   const home = (await $.env.get('HOME')) ?? ''
   const io = ioOf($)
   const now = await $.clock.now()
+  void stampFableLimit($, home, now)
   const rows = await collectSessions(io, home, { now, ownId: await $.session.id(), agents: PANE_AGENTS, skinOf: pickSkin })
   // nothing stamped yet: this session's own reading, better than nothing
   const stamped = await stampedLimits(io, home)
   const limits = stamped.length > 0 ? stamped : await ownLimits($)
 
-  const next: SessionsView = { rows, limits, at: now }
-  await update($, view, () => next)
+  await update($, view, old => ({ rows, limits, at: now, fable: old.fable }))
+  // the first count reads the week's transcripts: the pane does not wait for it
+  void fableWeek(io, home, weekStart(limits, now), now)
+    .then(fable => fable && update($, view, old => ({ ...old, fable })))
+    .catch(() => undefined)
+}
+
+// The app's own tools (ccd_*) answer through its connection to the session, and the app drops
+// that connection after half an hour unseen: the call then waits forever. Undefined past that.
+const APP_CALL_MS = 10_000
+const ARCHIVE_CLAIM_MS = 15_000
+
+async function callApp($: EngineInterface, server: string, tool: string, args: Record<string, unknown>) {
+  const late = $.clock.sleep(APP_CALL_MS).then(() => undefined)
+  return Promise.race([$.mcp.call(server, tool, args), late])
+}
+
+const textOf = (res: { content: readonly unknown[] }) =>
+  res.content
+    .map(b => (b && typeof b === 'object' && 'text' in b && typeof b.text === 'string' ? b.text : ''))
+    .join(' ')
+    .trim()
+
+type ArchiveWorker = { tried: Set<string>; isBusy: boolean }
+
+// An archive the artifact asked for, run by the first session that gets an answer from the app:
+// the session to archive may be one the app has disconnected. A claim keeps two from running it
+// at once; one whose call times out lets it go, and the next session tries.
+async function runArchives($: EngineInterface, worker: ArchiveWorker) {
+  if (worker.isBusy) return
+  const home = (await $.env.get('HOME')) ?? ''
+  const me = await $.session.id()
+  const dir = inboxDir(home)
+  const entries = await $.fs.list(dir).catch(() => [])
+  for (const entry of entries) {
+    const target = /^([0-9a-f-]{36})\.json$/.exec(entry.name)?.[1]
+    if (!target) continue
+    const cmd = await $.fs
+      .read(commandFile(home, target))
+      .then(text => JSON.parse(text) as Command)
+      .catch(() => undefined)
+    if (!cmd || cmd.action !== 'archive' || !cmd.hostId || worker.tried.has(cmd.id)) continue
+    const now = await $.clock.now()
+    if (now - cmd.at > COMMAND_TTL_MS) continue
+    const result = await $.fs
+      .read(resultFile(home, target))
+      .then(text => JSON.parse(text) as CommandResult)
+      .catch(() => undefined)
+    if (result?.id === cmd.id && result.status !== 'running') continue
+    const readClaim = () =>
+      $.fs
+        .read(claimFile(home, target))
+        .then(text => JSON.parse(text) as Claim)
+        .catch(() => undefined)
+    const claim = await readClaim()
+    if (claim?.cmdId === cmd.id && claim.by !== me && now - claim.at < ARCHIVE_CLAIM_MS) continue
+    await $.fs.write(claimFile(home, target), JSON.stringify({ cmdId: cmd.id, by: me, at: now } satisfies Claim))
+    if ((await readClaim())?.by !== me) continue
+
+    worker.isBusy = true
+    worker.tried.add(cmd.id)
+    const answer = async (status: CommandResult['status'], message?: string) => {
+      const res: CommandResult = { id: cmd.id, action: 'archive', status, at: await $.clock.now(), message }
+      await $.fs.write(resultFile(home, target), JSON.stringify(res)).catch(() => undefined)
+    }
+    try {
+      await answer('running')
+      const res = await callApp($, 'ccd_session_mgmt', 'archive_session', { session_id: cmd.hostId, reason: 'Archiviata da Crab Sessions' })
+      if (!res) {
+        // the app is not answering this session either: let another one try
+        await $.fs.write(claimFile(home, target), JSON.stringify({ cmdId: cmd.id, by: me, at: 0 } satisfies Claim))
+      } else {
+        await answer(res.isError ? 'error' : 'done', textOf(res).slice(0, 300) || undefined)
+      }
+    } catch (err) {
+      await answer('error', err instanceof Error ? err.message : String(err))
+    } finally {
+      worker.isBusy = false
+    }
+    return
+  }
+}
+
+type PaneTimer = { timer?: { cancel: () => void } }
+
+// The pane's data, read now and every few seconds while it is open.
+function startRefresh($: EngineInterface, pane: PaneTimer) {
+  pane.timer?.cancel()
+  // a refresh that fails keeps the last view: the next one tries again
+  const tick = () => void refresh($).catch(() => undefined)
+  tick()
+  pane.timer = $.clock.every(REFRESH_MS, tick)
 }
 
 // Commands the artifact queued for this session through the local MCP server: one file per
@@ -166,7 +288,8 @@ async function runInbox($: EngineInterface, inbox: { handled?: string; isBusy: b
     .read(commandFile(home, id))
     .then(text => JSON.parse(text) as Command)
     .catch(() => undefined)
-  if (!cmd) return
+  // an archive is run by whichever session the app is connected to: runArchives
+  if (!cmd || cmd.action === 'archive') return
   inbox.handled ??= await $.fs
     .read(resultFile(home, id))
     .then(text => (JSON.parse(text) as CommandResult).id)
@@ -190,21 +313,28 @@ async function runInbox($: EngineInterface, inbox: { handled?: string; isBusy: b
       // written first: once cleared, the session answers under a new id
       await answer('done')
       await $.command.run({ command: 'clear' })
+    } else if (cmd.action === 'desktop') {
+      // /desktop saves the session, opens it in the app and closes this terminal: answered first
+      if (!(await $.command.list()).some(c => c.name === 'desktop')) {
+        await answer('error', 'Questo Claude Code non ha /desktop: serve l’accesso con un account Claude.')
+        return
+      }
+      await answer('done')
+      await $.command.run({ command: 'desktop' })
     } else if (cmd.action === 'split') {
       // the desktop app forks this conversation into a new session with the task the person wrote
-      const res = await $.mcp.call('ccd_session', 'start_session', {
+      // a fork of this very conversation: only this session can ask for it
+      const res = await callApp($, 'ccd_session', 'start_session', {
         initiation: 'user_asked',
         context: 'fork',
         title: cmd.title ?? 'Copia',
         prompt: cmd.prompt ?? '',
       })
-      const text = res.content.map(b => ('text' in b && typeof b.text === 'string' ? b.text : '')).join(' ').trim()
-      await answer(res.isError ? 'error' : 'done', text.slice(0, 300) || undefined)
-    } else if (cmd.action === 'archive') {
-      // the app stops this session once archived: the answer may be the last thing it writes
-      const res = await $.mcp.call('ccd_session_mgmt', 'archive_session', { session_id: 'self', reason: 'Archiviata da Crab Sessions' })
-      const text = res.content.map(b => ('text' in b && typeof b.text === 'string' ? b.text : '')).join(' ').trim()
-      await answer(res.isError ? 'error' : 'done', text.slice(0, 300) || undefined)
+      if (!res) {
+        await answer('error', 'L’app ha messo in pausa questa sessione per inattività: aprila un momento e riprova. La copia potrebbe partire da sola quando la riapri.')
+      } else {
+        await answer(res.isError ? 'error' : 'done', textOf(res).slice(0, 300) || undefined)
+      }
     }
   } catch (err) {
     await answer('error', err instanceof Error ? err.message : String(err))
@@ -213,31 +343,43 @@ async function runInbox($: EngineInterface, inbox: { handled?: string; isBusy: b
   }
 }
 
-export const register: Register = on => {
-  let timer: { cancel: () => void } | undefined
+export const register: Register = (on, options) => {
+  // off, the pane no longer opens by itself: the artifact took its place. The hooks below
+  // stay, as the artifact reads the flags, tokens and limits they write and queues its commands.
+  const showPane = options.showPane !== false
+  const pane: PaneTimer = {}
   let inboxTimer: { cancel: () => void } | undefined
   const inbox: { handled?: string; isBusy: boolean } = { isBusy: false }
+  const archives: ArchiveWorker = { tried: new Set(), isBusy: false }
 
   on('session.start', async ($, e, next) => {
     // every session, the terminal's too, runs what the artifact asks of it
     inboxTimer?.cancel()
-    inboxTimer = $.clock.every(INBOX_MS, () => void runInbox($, inbox))
+    inboxTimer = $.clock.every(INBOX_MS, () => {
+      void runInbox($, inbox)
+      void runArchives($, archives).catch(() => undefined)
+    })
 
     // The CLI's REPL starts on the terminal surface: it gets no panel, but its turns still feed the desktop panel.
     if (e.surface === 'terminal') return next(e)
 
     await $.command.register({ name: 'crab', description: 'Mostra il pannello delle sessioni con il granchio' })
-    void $.ui.open({ id: PANE, title: 'Sessioni' })
-    timer?.cancel()
-    void refresh($)
-    timer = $.clock.every(REFRESH_MS, () => void refresh($))
+    if (showPane) {
+      void $.ui.open({ id: PANE, title: 'Sessioni' })
+      startRefresh($, pane)
+    } else {
+      // turned off while the pane was open: the reload with the new option closes it
+      pane.timer?.cancel()
+      void $.ui.close({ id: PANE }).catch(() => undefined)
+    }
 
     return next(e)
   })
 
+  // asked for by name, the pane opens even with the option off
   on('command.run', { command: 'crab' }, async $ => {
     await $.ui.open({ id: PANE, title: 'Sessioni' })
-    await refresh($)
+    startRefresh($, pane)
 
     return { text: 'Pannello sessioni aperto.' }
   })
@@ -262,6 +404,8 @@ export const register: Register = on => {
       }
       await $.fs.write(file, JSON.stringify(total))
       await saveLimits($, home, await $.clock.now())
+      // the turn may have moved Fable's window: read it, without the turn waiting on the app
+      void stampFableLimit($, home, await $.clock.now())
     } catch {
       // counting must never break a turn
     }
@@ -349,7 +493,8 @@ export const register: Register = on => {
     const working = data.rows.length - waiting
     const barWidth = Math.max(8, Math.min(40, (e.props.bodyColumns ?? 30) - 4))
 
-    const limit = (kind: string, label: string) => {
+    // `left`: the line under the bar says what is still available
+    const limit = (kind: string, label: string, left = false) => {
       const l = data.limits.find(x => x.kind === kind)
       if (!l) {
         return (
@@ -360,7 +505,7 @@ export const register: Register = on => {
         )
       }
       const resets = l.resetsAt ? Date.parse(l.resetsAt) : undefined
-      const when = l.resetsAt ? clockTime(l.resetsAt, kind === 'seven_day') : ''
+      const when = l.resetsAt ? clockTime(l.resetsAt, kind !== 'five_hour') : ''
       return (
         <Box flexDirection="column">
           <Box justifyContent="space-between">
@@ -368,12 +513,39 @@ export const register: Register = on => {
             <Text bold>{Math.round(l.percent)}%</Text>
           </Box>
           <Text color={toneOf(l.percent)}>{bar(l.percent, barWidth)}</Text>
+          {left && <Text dimColor>{Math.max(0, 100 - Math.round(l.percent))}% ancora disponibile</Text>}
           {resets !== undefined && (
             <Text dimColor>
               reset {when ? `${when} · ` : ''}
               {until(resets - at)}
             </Text>
           )}
+        </Box>
+      )
+    }
+
+    // Fable's window comes from the app's usage card; its tokens are counted from the transcripts
+    const fable = () => {
+      const f = data.fable
+      const hasLimit = data.limits.some(x => x.kind === FABLE_LIMIT)
+      return (
+        <Box flexDirection="column">
+          {hasLimit ? (
+            limit(FABLE_LIMIT, 'Fable · settimana', true)
+          ) : (
+            <Box justifyContent="space-between">
+              <Text>Fable · settimana</Text>
+              <Text bold>{f ? `${fmtTokens(f.fresh)} token` : '–'}</Text>
+            </Box>
+          )}
+          <Text dimColor>
+            {hasLimit && f ? `${fmtTokens(f.fresh)} token · ` : ''}
+            {!f
+              ? 'conteggio in corso…'
+              : f.replies === 0
+                ? `nessun uso dal ${clockTime(new Date(f.since).toISOString(), true)}`
+                : `${f.replies} risposte · ${fmtTokens(f.cached)} dalla cache · dal ${clockTime(new Date(f.since).toISOString(), true)}`}
+          </Text>
         </Box>
       )
     }
@@ -390,6 +562,7 @@ export const register: Register = on => {
         <Box flexDirection="column">
           {limit('five_hour', 'Sessione 5 ore')}
           {limit('seven_day', 'Settimana')}
+          {fable()}
         </Box>
         {data.rows.length === 0 && <Text dimColor>Nessuna sessione aperta.</Text>}
         <Box flexDirection="row" flexWrap="wrap" gap={1} alignItems="flex-start">

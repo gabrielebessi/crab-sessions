@@ -1,7 +1,8 @@
 # crab-sessions
 
 Mod di Claude Code: un pannello a destra della chat con le sessioni aperte sul Mac (dove lavorano, quali aspettano
-una risposta), la percentuale e il reset della sessione da 5 ore e della settimana, gli agenti che lavorano sotto
+una risposta), la percentuale e il reset della sessione da 5 ore, della settimana e del limite settimanale di Fable (letto dalla
+scheda utilizzo dell'app desktop, con i token Fable contati dai transcript), gli agenti che lavorano sotto
 ogni sessione e token e costo. Ogni sessione ha un granchio in pixel art animato, con una skin scelta dal titolo e
 dalla cartella.
 
@@ -16,6 +17,12 @@ Nel prompt di un terminale:
 ```
 
 Poi `/reload-plugins` nelle sessioni già aperte. Il pannello si apre da solo; `/crab` lo riapre.
+
+Se usi la variante artifact, il pannello si spegne con l'opzione **Pannello Sessioni nell'app** (`showPane`):
+`/plugin configure crab-sessions` in una sessione, oppure
+`echo '{"showPane":"false"}' | claude plugin configure crab-sessions@crab-sessions --values-stdin`. Spento, il
+pannello non si apre più da solo (resta `/crab` per aprirlo a mano), mentre stati, token e comandi, che servono
+all'artifact, continuano a funzionare.
 
 ## Variante artifact
 

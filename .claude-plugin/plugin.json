@@ -1,6 +1,16 @@
 {
   "name": "crab-sessions",
-  "version": "0.3.0",
-  "description": "Pannello laterale con le sessioni attive, limiti 5 ore e settimanali e mascotte granchio pixel art",
-  "types": "./types/index.d.ts"
+  "version": "0.5.0",
+  "description": "Pannello laterale con le sessioni attive, limiti 5 ore, settimanali e Fable e mascotte granchio pixel art",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "showPane": {
+      "type": "boolean",
+      "title": "Pannello Sessioni nell'app",
+      "description": "Apre il pannello Sessioni accanto alla chat. Spento, il pannello non si apre più da solo (resta /crab): stati, token e comandi per la pagina Crab Sessions continuano a funzionare.",
+      "default": true,
+      "required": false,
+      "sensitive": false
+    }
+  }
 }

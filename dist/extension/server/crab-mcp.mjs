@@ -17,18 +17,20 @@ import {
   crabDir,
   hiddenFile,
   crabState,
+  fableWeek,
   inboxDir,
   resultFile,
   stampedLimits,
   transcriptDir,
+  weekStart,
 } from '../core/sessions.mjs'
                                                                                     
 import { crabSvg, pickSkin } from '../hooks/sprites.mjs'
 import { fileDiff, gitGraph, gitState } from './git.mjs'
                                         
-                                                                      
+                                                                                 
 
-const VERSION = '0.3.0'
+const VERSION = '0.5.0'
 const HOME = homedir()
 const LOG = `${crabDir(HOME)}/mcp.log`
 const LOG_LINES = 400
@@ -52,6 +54,7 @@ const io     = {
     )
   },
   read: path => readFile(path, 'utf8'),
+  write: (path, text) => writeFile(path, text),
   exists: path => access(path).then(
     () => true,
     () => false,
@@ -302,7 +305,7 @@ async function detailOf(row            )                  {
                                                          
                                                                                                       
                                                         
-                                                                                                   
+                                                                                                                      
 
 async function actionOf(id        , now        )                                  {
   const cmd = await readFile(commandFile(HOME, id), 'utf8')
@@ -321,6 +324,8 @@ async function actionOf(id        , now        )                                
 }
 
 let cached                                            
+// the first count reads the week's transcripts: the snapshot does not wait for it
+let fable                       
 
 async function snapshot()                    {
   const now = Date.now()
@@ -339,11 +344,15 @@ async function snapshot()                    {
     rows.push({ ...row, crab: `${row.skin}/${crabState(row.state, now - row.since)}`, agents, action: await actionOf(row.id, now) })
   }
   const limits = await stampedLimits(io, HOME)
+  void fableWeek(io, HOME, weekStart(limits, now), now)
+    .then(f => (fable = f ?? fable))
+    .catch(() => undefined)
 
   // the version changes with what the page shows, not with every file's mtime
   const stable = rows.map(r => ({ ...r, agents: r.agents.map(a => ({ ...a, at: 0 })) }))
-  const version = createHash('sha1').update(JSON.stringify({ stable, hidden, limits })).digest('hex').slice(0, 16)
-  const snap = { version, at: now, rows, hidden, limits }
+  const shown = fable && { fresh: fable.fresh, cached: fable.cached, replies: fable.replies, since: fable.since }
+  const version = createHash('sha1').update(JSON.stringify({ stable, hidden, limits, shown })).digest('hex').slice(0, 16)
+  const snap = { version, at: now, rows, hidden, limits, fable }
   cached = { at: now, snap }
   return snap
 }
@@ -420,6 +429,7 @@ async function splitInTerminal(row         , prompt        ) {
 
 async function queue(row         , action               , prompt         ) {
   const cmd          = { id: randomUUID(), action, at: Date.now() }
+  if (action === 'archive') cmd.hostId = row.hostId
   if (prompt) {
     cmd.prompt = prompt
     cmd.title = clip(oneLine(prompt), 58)
@@ -457,15 +467,20 @@ async function sessionAction(args                         ) {
   }
   const row = await findRow(args.sessionId)
   if (action === 'hide') return setHidden(row.id, true)
-  // the app archives its own sessions; the mod inside the session asks it to
+  // the app archives its sessions: the mod of any session the app is connected to asks it to
   if (action === 'archive') {
     if (row.origin !== 'desktop') throw new Error('Le sessioni del Terminale non si archiviano: nascondila.')
+    if (!row.hostId || !/^local_[0-9a-f-]+$/.test(row.hostId)) throw new Error('L’app non ha ancora dato un id a questa sessione: riprova tra poco.')
     return queue(row, 'archive')
   }
   if (action === 'split') {
     const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
     if (!prompt) throw new Error('Scrivi cosa deve fare la copia.')
     return row.origin === 'desktop' ? queue(row, 'split', prompt) : splitInTerminal(row, prompt)
+  }
+  if (action === 'desktop') {
+    if (row.origin === 'desktop') throw new Error('Questa sessione è già nell’app.')
+    return queue(row, 'desktop')
   }
   if (action === 'compact' || action === 'clear') return queue(row, action)
   throw new Error(`Azione sconosciuta: ${String(action)}`)
@@ -530,12 +545,12 @@ const TOOLS         = [
   {
     name: 'session_action',
     description:
-      'Compatta o pulisce la conversazione di una sessione, ne avvia una copia (split), la archivia nell\'app o la nasconde dalla pagina.',
+      'Compatta o pulisce la conversazione di una sessione, ne avvia una copia (split), sposta una sessione del Terminale nell\'app (desktop), la archivia nell\'app o la nasconde dalla pagina.',
     inputSchema: {
       type: 'object',
       properties: {
         sessionId: { type: 'string' },
-        action: { type: 'string', enum: ['compact', 'clear', 'split', 'archive', 'hide', 'unhide'] },
+        action: { type: 'string', enum: ['compact', 'clear', 'split', 'desktop', 'archive', 'hide', 'unhide'] },
         prompt: { type: 'string', description: 'Per split: cosa deve fare la copia.' },
       },
       required: ['sessionId', 'action'],

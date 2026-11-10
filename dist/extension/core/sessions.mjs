@@ -1,12 +1,13 @@
 // The sessions open on this Mac, read from Claude Code's own files. Shared by the mod's pane
 // (through `$.fs`) and the local MCP server behind the artifact (through node:fs): no `$`, no
 // Node here, and only type imports, so Node can run this file as it is.
-                                                                             
+                                                                                        
 
                   
                                                                               
                                          
                                             
+                                                       
  
 
                  
@@ -36,11 +37,20 @@ export const crabDir = (home        ) => `${home}/.claude/crab-sessions`
 export const flagFile = (home        , id        ) => `${crabDir(home)}/ask-${id}.txt`
 export const ledgerFile = (home        , id        ) => `${crabDir(home)}/tokens-${id}.json`
 export const limitsFile = (home        , id        ) => `${crabDir(home)}/limits-${id}.json`
+// Fable's weekly window, read from the desktop app's usage card: a stamp of its own, as only
+// the app's sessions can read it
+export const fableLimitFile = (home        , id        ) => `${crabDir(home)}/limits-${id}.fable.json`
+export const FABLE_LIMIT = 'seven_day_fable'
 export const inboxDir = (home        ) => `${crabDir(home)}/inbox`
 export const commandFile = (home        , id        ) => `${inboxDir(home)}/${id}.json`
 export const resultFile = (home        , id        ) => `${inboxDir(home)}/${id}.result.json`
+// which session took an archive command on, and when
+export const claimFile = (home        , id        ) => `${inboxDir(home)}/${id}.claim.json`
 // sessions the person hid from the board: terminal ones, which the app cannot archive
 export const hiddenFile = (home        ) => `${crabDir(home)}/hidden.json`
+// Fable's weekly count, and the per-transcript tally it is summed from
+export const fableFile = (home        ) => `${crabDir(home)}/fable-week.json`
+export const fableCacheFile = (home        ) => `${crabDir(home)}/fable-cache.json`
 export const transcriptDir = (home        , cwd        , id        ) =>
   `${home}/.claude/projects/${cwd.replace(/[^a-zA-Z0-9]/g, '-')}/${id}`
 
@@ -156,27 +166,33 @@ export async function collectSessions(io    , home        , opts                
                                                  
 
 // An idle session's own rate limits go stale: each session stamps what it saw right after a
-// turn, and the newest stamp of all wins. Empty when no session stamped one yet.
+// turn, and for each window the newest stamp of all wins. Empty when no session stamped one yet.
 export async function stampedLimits(io    , home        )                   {
   const dir = crabDir(home)
   const entries = await io.list(dir).catch(() => [])
-  let best                        
+  const best = new Map                                      ()
   for (const entry of entries) {
     if (!/^limits-.+\.json$/.test(entry.name)) continue
     try {
       const file = JSON.parse(await io.read(`${dir}/${entry.name}`))              
-      if (!best || file.at > best.at) best = file
+      for (const limit of file.limits) {
+        if ((best.get(limit.kind)?.at ?? -1) < file.at) best.set(limit.kind, { at: file.at, limit })
+      }
     } catch {
       // half-written: skipped until the next refresh
     }
   }
-  return best?.limits ?? []
+  return [...best.values()].map(b => b.limit)
 }
 
 // What the artifact asks a session to do; the mod in that session runs it and answers.
-                                                                     
+// desktop: a terminal session moves to the desktop app (its /desktop), and the terminal closes
+                                                                                 
 
-                                                                                                        
+// hostId: the app's id of the session (`local_…`), for an archive any session can run
+                                                                                                                         
+
+                                                             
 
                              
             
@@ -188,3 +204,109 @@ export async function stampedLimits(io    , home        )                   {
 
 // A command older than this, never picked up (the session was closed), is not run any more.
 export const COMMAND_TTL_MS = 2 * 60 * 1000
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000
+// every open pane and the artifact's server ask for it: one of them counts again this often
+export const FABLE_EVERY_MS = 60 * 1000
+
+// The week the count covers: since the last weekly reset, else the last seven days.
+export const weekStart = (limits                  , now        ) => {
+  const reset = limits.find(l => l.kind === 'seven_day')?.resetsAt
+  const at = reset ? Date.parse(reset) : NaN
+  // without a reset to go by, on the hour: the count is not started over at every call
+  return Number.isFinite(at) ? at - WEEK_MS : Math.floor((now - WEEK_MS) / 3_600_000) * 3_600_000
+}
+
+// one reply's tokens and time: [fresh, cached, at]
+                                                     
+// `since`: the oldest reply the tallies hold, so they serve any later week start
+                                                                                               
+
+// The Fable replies of one transcript since `since`. A reply is written once per content block,
+// all with the same id and usage: counted once.
+function fableReplies(text        , since        )        {
+  const out        = {}
+  for (const line of text.split('\n')) {
+    if (!line.includes('"claude-fable')) continue
+    try {
+      const d = JSON.parse(line)     
+                     
+                          
+                                                                                             
+       
+      const m = d.message
+      if (d.type !== 'assistant' || !m?.id || !m.model?.startsWith('claude-fable') || !m.usage) continue
+      const at = d.timestamp ? Date.parse(d.timestamp) : NaN
+      if (!(at >= since)) continue
+      const u = m.usage
+      out[m.id] = [
+        (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+        u.cache_read_input_tokens ?? 0,
+        at,
+      ]
+    } catch {
+      // a line still being written
+    }
+  }
+  return out
+}
+
+// Every transcript touched since `since`: the sessions' own and their agents'.
+async function weekTranscripts(io    , home        , since        ) {
+  const root = `${home}/.claude/projects`
+  const out                                      = []
+  for (const project of await io.list(root).catch(() => [])) {
+    const dir = `${root}/${project.name}`
+    for (const file of await io.list(dir).catch(() => [])) {
+      if (!file.name.endsWith('.jsonl') || file.mtimeMs < since) continue
+      out.push({ path: `${dir}/${file.name}`, mtimeMs: file.mtimeMs })
+      const agents = `${dir}/${file.name.replace(/\.jsonl$/, '')}/subagents`
+      for (const a of await io.list(agents).catch(() => [])) {
+        if (a.name.endsWith('.jsonl') && a.mtimeMs >= since) out.push({ path: `${agents}/${a.name}`, mtimeMs: a.mtimeMs })
+      }
+    }
+  }
+  return out
+}
+
+let counting                                
+
+// Fable's use this week. Whoever finds the count older than FABLE_EVERY_MS counts again,
+// reading only the transcripts changed since the last count; the others read its file.
+export async function fableWeek(io    , home        , since        , now        )                                 {
+  const saved = await io
+    .read(fableFile(home))
+    .then(t => JSON.parse(t)             )
+    .catch(() => undefined)
+  if (saved && saved.since === since && now - saved.at < FABLE_EVERY_MS) return saved
+  if (!io.write) return saved?.since === since ? saved : undefined
+  counting ??= countFable(io, home, since, now).finally(() => (counting = undefined))
+  return counting
+}
+
+async function countFable(io    , home        , since        , now        )                     {
+  const old = await io
+    .read(fableCacheFile(home))
+    .then(t => JSON.parse(t)              )
+    .catch(() => undefined)
+  const cache             = { since: old && old.since <= since ? old.since : since, files: {} }
+  for (const file of await weekTranscripts(io, home, since)) {
+    const hit = old && old.since <= since ? old.files[file.path] : undefined
+    const replies =
+      hit && hit.mtimeMs === file.mtimeMs ? hit.replies : fableReplies(await io.read(file.path).catch(() => ''), cache.since)
+    cache.files[file.path] = { mtimeMs: file.mtimeMs, replies }
+  }
+  // a forked session copies the replies before the fork: one id, counted once
+  const all        = {}
+  for (const f of Object.values(cache.files)) Object.assign(all, f.replies)
+  const week            = { fresh: 0, cached: 0, replies: 0, since, at: now }
+  for (const [fresh, cached, at] of Object.values(all)) {
+    if (at < since) continue
+    week.fresh += fresh
+    week.cached += cached
+    week.replies += 1
+  }
+  await io.write?.(fableCacheFile(home), JSON.stringify(cache)).catch(() => undefined)
+  await io.write?.(fableFile(home), JSON.stringify(week)).catch(() => undefined)
+  return week
+}
