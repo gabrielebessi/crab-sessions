@@ -216,6 +216,29 @@ const APP_CALLS: Partial<Record<Command['action'], (cmd: Command) => { tool: str
   rename: cmd => ({ tool: 'set_session_title', args: { session_id: cmd.hostId, title: cmd.title ?? '' } }),
 }
 
+type AppResult = Awaited<ReturnType<typeof callApp>>
+
+// The app does not archive a session with live work, and a connected Remote Control client counts:
+// with Remote Control on at startup, that is most sessions. An archive stops the session anyway, so
+// its Remote Control goes off first and the archive is asked again.
+const LIVE_WORK = /still has live work/i
+const LIVE_WORK_TEXT = 'L’app non la archivia finché ha lavoro in corso (un agente, un messaggio in coda o un task in background): aspetta che finisca, o archiviala dalla barra laterale.'
+
+async function archiveWithoutRemoteControl($: EngineInterface, hostId: string, first: AppResult): Promise<AppResult> {
+  if (!first?.isError || !LIVE_WORK.test(textOf(first))) return first
+  const info = await callApp($, 'ccd_session_mgmt', 'get_session', { session_id: hostId })
+  let hasRemote = false
+  try {
+    hasRemote = !!info && !info.isError && (JSON.parse(textOf(info)) as { remoteControlActive?: boolean }).remoteControlActive === true
+  } catch {
+    // not the JSON it used to be: the first answer stands
+  }
+  if (!hasRemote) return first
+  const off = await callApp($, 'ccd_session_mgmt', 'set_remote_control', { session_id: hostId, enabled: false })
+  if (!off || off.isError) return first
+  return callApp($, 'ccd_session_mgmt', 'archive_session', { session_id: hostId, reason: 'Archiviata da Crab Sessions' })
+}
+
 // An archive or a rename the artifact asked for, run by the first session that gets an answer
 // from the app: the session it is for may be one the app has disconnected. A claim keeps two from
 // running it at once; one whose call times out lets it go, and the next session tries.
@@ -259,10 +282,13 @@ async function runAppCommands($: EngineInterface, worker: AppWorker) {
     }
     try {
       await answer('running')
-      const res = await callApp($, 'ccd_session_mgmt', call.tool, call.args)
+      let res = await callApp($, 'ccd_session_mgmt', call.tool, call.args)
+      if (cmd.action === 'archive' && cmd.hostId) res = await archiveWithoutRemoteControl($, cmd.hostId, res)
       if (!res) {
         // the app is not answering this session either: let another one try
         await $.fs.write(claimFile(home, target), JSON.stringify({ cmdId: cmd.id, by: me, at: 0 } satisfies Claim))
+      } else if (res.isError && LIVE_WORK.test(textOf(res))) {
+        await answer('error', LIVE_WORK_TEXT)
       } else {
         await answer(res.isError ? 'error' : 'done', textOf(res).slice(0, 300) || undefined)
       }

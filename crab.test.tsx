@@ -234,7 +234,7 @@ const INBOX = '/h/.claude/crab-sessions/inbox'
 async function archiveSetup(
   $: Parameters<Parameters<typeof test>[1]>[0],
   on: Parameters<Parameters<typeof test>[1]>[1],
-  answer: () => unknown,
+  answer: (call: { tool: string; args: Record<string, unknown> }) => unknown,
   cmd: Record<string, unknown> = { id: 'c9', action: 'archive', hostId: 'local_other' },
 ) {
   const T = 1_800_000_000_000
@@ -258,7 +258,7 @@ async function archiveSetup(
   })
   on('mcp.call', (_, e) => {
     calls.push(e)
-    return answer() as never
+    return answer(e) as never
   })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   return { clock, files, calls }
@@ -307,6 +307,31 @@ test('a terminal session renames itself with /rename', async ($, on) => {
   await clock.advance(1500)
   expect(runs).toEqual(['/rename Deploy staging'])
   expect(JSON.parse(files[`${INBOX}/s1.result.json`])).toEqual(expect.objectContaining({ id: 'r2', status: 'done' }))
+})
+
+const LIVE = 'Session local_other ("X") was not archived: it still has live work (an agent run, a Remote Control client, a queued message or a background task).'
+const reply = (text: string, isError = false) => ({ value: { content: [{ type: 'text', text }], isError } })
+
+test('an archive the app refuses for a Remote Control client turns Remote Control off and asks again', async ($, on) => {
+  let archives = 0
+  const { clock, files, calls } = await archiveSetup($, on, ({ tool }) => {
+    if (tool === 'archive_session') return ++archives === 1 ? reply(LIVE, true) : reply('Archived.')
+    if (tool === 'get_session') return reply(JSON.stringify({ sessionId: 'local_other', remoteControlActive: true }))
+    return reply('off')
+  })
+  await clock.advance(1500)
+  expect(calls.map(c => c.tool)).toEqual(['archive_session', 'get_session', 'set_remote_control', 'archive_session'])
+  expect(calls[2].args).toEqual({ session_id: 'local_other', enabled: false })
+  expect(JSON.parse(files[`${INBOX}/${OTHER}.result.json`])).toEqual(expect.objectContaining({ id: 'c9', status: 'done' }))
+})
+
+test('an archive refused for other live work says so in Italian, Remote Control left alone', async ($, on) => {
+  const { clock, files, calls } = await archiveSetup($, on, ({ tool }) =>
+    tool === 'get_session' ? reply(JSON.stringify({ remoteControlActive: false })) : reply(LIVE, true),
+  )
+  await clock.advance(1500)
+  expect(calls.map(c => c.tool)).toEqual(['archive_session', 'get_session'])
+  expect(JSON.parse(files[`${INBOX}/${OTHER}.result.json`])).toEqual(expect.objectContaining({ status: 'error', message: expect.stringMatching(/^L’app non la archivia/) }))
 })
 
 test('a session the app does not answer gives the archive up after 10 s for another to take', async ($, on) => {

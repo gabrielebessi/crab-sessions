@@ -1,6 +1,6 @@
 {
   "name": "crab-sessions",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Pannello laterale con le sessioni attive, limiti 5 ore, settimanali e Fable e mascotte granchio pixel art",
   "types": "./types/index.d.ts",
   "userConfig": {
