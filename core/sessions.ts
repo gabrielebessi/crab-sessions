@@ -187,10 +187,14 @@ export async function stampedLimits(io: Io, home: string): Promise<Limit[]> {
 
 // What the artifact asks a session to do; the mod in that session runs it and answers.
 // desktop: a terminal session moves to the desktop app (its /desktop), and the terminal closes
-export type CommandAction = 'compact' | 'clear' | 'split' | 'archive' | 'desktop'
+// rename: the session's new name is `title`
+export type CommandAction = 'compact' | 'clear' | 'split' | 'archive' | 'desktop' | 'rename'
 
-// hostId: the app's id of the session (`local_…`), for an archive any session can run
+// hostId: the app's id of the session (`local_…`). A command that has one is the app's to run
+// (archive, rename of an app session): any session the app answers asks it, see isAppCommand.
 export type Command = { id: string; action: CommandAction; at: number; prompt?: string; title?: string; hostId?: string }
+
+export const isAppCommand = (cmd: Command) => !!cmd.hostId
 
 export type Claim = { cmdId: string; by: string; at: number }
 

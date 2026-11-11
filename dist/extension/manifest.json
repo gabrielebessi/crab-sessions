@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "crab-sessions",
   "display_name": "crab-sessions",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Le sessioni di Claude Code sul Mac per la pagina Crab Sessions: stato, agenti, modifiche git, comandi.",
   "author": {
     "name": "Gabriele Bessi"

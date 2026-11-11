@@ -13,6 +13,7 @@ import {
   fableWeek,
   flagFile,
   inboxDir,
+  isAppCommand,
   ledgerFile,
   limitsFile,
   readFlag,
@@ -207,12 +208,18 @@ const textOf = (res: { content: readonly unknown[] }) =>
     .join(' ')
     .trim()
 
-type ArchiveWorker = { tried: Set<string>; isBusy: boolean }
+type AppWorker = { tried: Set<string>; isBusy: boolean }
 
-// An archive the artifact asked for, run by the first session that gets an answer from the app:
-// the session to archive may be one the app has disconnected. A claim keeps two from running it
-// at once; one whose call times out lets it go, and the next session tries.
-async function runArchives($: EngineInterface, worker: ArchiveWorker) {
+// What the app does for each command that is its own (isAppCommand).
+const APP_CALLS: Partial<Record<Command['action'], (cmd: Command) => { tool: string; args: Record<string, unknown> }>> = {
+  archive: cmd => ({ tool: 'archive_session', args: { session_id: cmd.hostId, reason: 'Archiviata da Crab Sessions' } }),
+  rename: cmd => ({ tool: 'set_session_title', args: { session_id: cmd.hostId, title: cmd.title ?? '' } }),
+}
+
+// An archive or a rename the artifact asked for, run by the first session that gets an answer
+// from the app: the session it is for may be one the app has disconnected. A claim keeps two from
+// running it at once; one whose call times out lets it go, and the next session tries.
+async function runAppCommands($: EngineInterface, worker: AppWorker) {
   if (worker.isBusy) return
   const home = (await $.env.get('HOME')) ?? ''
   const me = await $.session.id()
@@ -225,7 +232,8 @@ async function runArchives($: EngineInterface, worker: ArchiveWorker) {
       .read(commandFile(home, target))
       .then(text => JSON.parse(text) as Command)
       .catch(() => undefined)
-    if (!cmd || cmd.action !== 'archive' || !cmd.hostId || worker.tried.has(cmd.id)) continue
+    const call = cmd && isAppCommand(cmd) ? APP_CALLS[cmd.action]?.(cmd) : undefined
+    if (!cmd || !call || worker.tried.has(cmd.id)) continue
     const now = await $.clock.now()
     if (now - cmd.at > COMMAND_TTL_MS) continue
     const result = await $.fs
@@ -246,12 +254,12 @@ async function runArchives($: EngineInterface, worker: ArchiveWorker) {
     worker.isBusy = true
     worker.tried.add(cmd.id)
     const answer = async (status: CommandResult['status'], message?: string) => {
-      const res: CommandResult = { id: cmd.id, action: 'archive', status, at: await $.clock.now(), message }
+      const res: CommandResult = { id: cmd.id, action: cmd.action, status, at: await $.clock.now(), message }
       await $.fs.write(resultFile(home, target), JSON.stringify(res)).catch(() => undefined)
     }
     try {
       await answer('running')
-      const res = await callApp($, 'ccd_session_mgmt', 'archive_session', { session_id: cmd.hostId, reason: 'Archiviata da Crab Sessions' })
+      const res = await callApp($, 'ccd_session_mgmt', call.tool, call.args)
       if (!res) {
         // the app is not answering this session either: let another one try
         await $.fs.write(claimFile(home, target), JSON.stringify({ cmdId: cmd.id, by: me, at: 0 } satisfies Claim))
@@ -288,8 +296,8 @@ async function runInbox($: EngineInterface, inbox: { handled?: string; isBusy: b
     .read(commandFile(home, id))
     .then(text => JSON.parse(text) as Command)
     .catch(() => undefined)
-  // an archive is run by whichever session the app is connected to: runArchives
-  if (!cmd || cmd.action === 'archive') return
+  // an archive, or an app session's rename, is run by whichever session the app answers: runAppCommands
+  if (!cmd || isAppCommand(cmd)) return
   inbox.handled ??= await $.fs
     .read(resultFile(home, id))
     .then(text => (JSON.parse(text) as CommandResult).id)
@@ -321,6 +329,10 @@ async function runInbox($: EngineInterface, inbox: { handled?: string; isBusy: b
       }
       await answer('done')
       await $.command.run({ command: 'desktop' })
+    } else if (cmd.action === 'rename') {
+      // a terminal session: the app has no say in its name
+      await $.command.run({ command: 'rename', args: cmd.title ?? '' })
+      await answer('done')
     } else if (cmd.action === 'split') {
       // the desktop app forks this conversation into a new session with the task the person wrote
       // a fork of this very conversation: only this session can ask for it
@@ -350,14 +362,14 @@ export const register: Register = (on, options) => {
   const pane: PaneTimer = {}
   let inboxTimer: { cancel: () => void } | undefined
   const inbox: { handled?: string; isBusy: boolean } = { isBusy: false }
-  const archives: ArchiveWorker = { tried: new Set(), isBusy: false }
+  const appWorker: AppWorker = { tried: new Set(), isBusy: false }
 
   on('session.start', async ($, e, next) => {
     // every session, the terminal's too, runs what the artifact asks of it
     inboxTimer?.cancel()
     inboxTimer = $.clock.every(INBOX_MS, () => {
       void runInbox($, inbox)
-      void runArchives($, archives).catch(() => undefined)
+      void runAppCommands($, appWorker).catch(() => undefined)
     })
 
     // The CLI's REPL starts on the terminal surface: it gets no panel, but its turns still feed the desktop panel.

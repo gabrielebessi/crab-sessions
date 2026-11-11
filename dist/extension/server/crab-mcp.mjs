@@ -427,13 +427,15 @@ async function splitInTerminal(row         , prompt        ) {
   return { started: true }
 }
 
-async function queue(row         , action               , prompt         ) {
+// asApp: the app runs it, by the session's app id (see isAppCommand)
+async function queue(row         , action               , extra                                                       = {}) {
   const cmd          = { id: randomUUID(), action, at: Date.now() }
-  if (action === 'archive') cmd.hostId = row.hostId
-  if (prompt) {
-    cmd.prompt = prompt
-    cmd.title = clip(oneLine(prompt), 58)
+  if (extra.asApp) cmd.hostId = row.hostId
+  if (extra.prompt) {
+    cmd.prompt = extra.prompt
+    cmd.title = clip(oneLine(extra.prompt), 58)
   }
+  if (extra.title) cmd.title = extra.title
   await mkdir(inboxDir(HOME), { recursive: true })
   await writeFile(commandFile(HOME, row.id), JSON.stringify(cmd))
   cached = undefined
@@ -458,6 +460,12 @@ async function setHidden(id        , isHidden         ) {
   return { hidden: isHidden }
 }
 
+const TITLE_MAX = 100
+
+function requireAppId(row         ) {
+  if (!row.hostId || !/^local_[0-9a-f-]+$/.test(row.hostId)) throw new Error('L’app non ha ancora dato un id a questa sessione: riprova tra poco.')
+}
+
 async function sessionAction(args                         ) {
   const action = args.action
   // a hidden session is not on the board: it is looked up among the live ones directly
@@ -470,13 +478,21 @@ async function sessionAction(args                         ) {
   // the app archives its sessions: the mod of any session the app is connected to asks it to
   if (action === 'archive') {
     if (row.origin !== 'desktop') throw new Error('Le sessioni del Terminale non si archiviano: nascondila.')
-    if (!row.hostId || !/^local_[0-9a-f-]+$/.test(row.hostId)) throw new Error('L’app non ha ancora dato un id a questa sessione: riprova tra poco.')
-    return queue(row, 'archive')
+    requireAppId(row)
+    return queue(row, 'archive', { asApp: true })
+  }
+  // an app session is renamed by the app, a terminal one runs /rename itself
+  if (action === 'rename') {
+    const title = typeof args.title === 'string' ? oneLine(args.title).trim() : ''
+    if (!title) throw new Error('Scrivi il nuovo nome.')
+    if (title.length > TITLE_MAX) throw new Error(`Il nome è troppo lungo: al massimo ${TITLE_MAX} caratteri.`)
+    if (row.origin === 'desktop') requireAppId(row)
+    return queue(row, 'rename', { title, asApp: row.origin === 'desktop' })
   }
   if (action === 'split') {
     const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
     if (!prompt) throw new Error('Scrivi cosa deve fare la copia.')
-    return row.origin === 'desktop' ? queue(row, 'split', prompt) : splitInTerminal(row, prompt)
+    return row.origin === 'desktop' ? queue(row, 'split', { prompt }) : splitInTerminal(row, prompt)
   }
   if (action === 'desktop') {
     if (row.origin === 'desktop') throw new Error('Questa sessione è già nell’app.')
@@ -545,13 +561,14 @@ const TOOLS         = [
   {
     name: 'session_action',
     description:
-      'Compatta o pulisce la conversazione di una sessione, ne avvia una copia (split), sposta una sessione del Terminale nell\'app (desktop), la archivia nell\'app o la nasconde dalla pagina.',
+      'Compatta o pulisce la conversazione di una sessione, ne avvia una copia (split), sposta una sessione del Terminale nell\'app (desktop), la rinomina, la archivia nell\'app o la nasconde dalla pagina.',
     inputSchema: {
       type: 'object',
       properties: {
         sessionId: { type: 'string' },
-        action: { type: 'string', enum: ['compact', 'clear', 'split', 'desktop', 'archive', 'hide', 'unhide'] },
+        action: { type: 'string', enum: ['compact', 'clear', 'split', 'desktop', 'rename', 'archive', 'hide', 'unhide'] },
         prompt: { type: 'string', description: 'Per split: cosa deve fare la copia.' },
+        title: { type: 'string', description: 'Per rename: il nuovo nome della sessione.' },
       },
       required: ['sessionId', 'action'],
     },

@@ -225,7 +225,8 @@ test('with the pane turned off it closes instead, and /crab still opens it', { o
   expect(calls).toEqual(['close crab-sessions', 'open crab-sessions'])
 })
 
-// An archive queued for another session (OTHER), seen by this one (ME); `answer` stands for the app.
+// A command the app runs (an archive, by default) queued for another session (OTHER), seen by this
+// one (ME); `answer` stands for the app.
 const ME = '11111111-1111-4111-8111-111111111111'
 const OTHER = '22222222-2222-4222-8222-222222222222'
 const INBOX = '/h/.claude/crab-sessions/inbox'
@@ -234,12 +235,13 @@ async function archiveSetup(
   $: Parameters<Parameters<typeof test>[1]>[0],
   on: Parameters<Parameters<typeof test>[1]>[1],
   answer: () => unknown,
+  cmd: Record<string, unknown> = { id: 'c9', action: 'archive', hostId: 'local_other' },
 ) {
   const T = 1_800_000_000_000
   const clock = mock.clock(on, { now: T })
   mock.env(on, { HOME: '/h' })
   const files: Record<string, string> = {
-    [`${INBOX}/${OTHER}.json`]: JSON.stringify({ id: 'c9', action: 'archive', at: T, hostId: 'local_other' }),
+    [`${INBOX}/${OTHER}.json`]: JSON.stringify({ at: T, ...cmd }),
   }
   const calls: { server: string; tool: string; args: Record<string, unknown> }[] = []
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -268,6 +270,43 @@ test('any session archives the session the artifact asked for, by its app id, on
   await clock.advance(1500)
   expect(calls).toEqual([expect.objectContaining({ server: 'ccd_session_mgmt', tool: 'archive_session', args: expect.objectContaining({ session_id: 'local_other' }) })])
   expect(JSON.parse(files[`${INBOX}/${OTHER}.result.json`])).toEqual(expect.objectContaining({ id: 'c9', status: 'done', message: 'Archived.' }))
+})
+
+test('any session asks the app to rename an app session, by its app id', async ($, on) => {
+  const { clock, files, calls } = await archiveSetup($, on, () => ({ value: { content: [{ type: 'text', text: 'Renamed.' }], isError: false } }), {
+    id: 'r1', action: 'rename', title: 'Report clienti', hostId: 'local_other',
+  })
+  await clock.advance(1500)
+  expect(calls).toEqual([expect.objectContaining({ server: 'ccd_session_mgmt', tool: 'set_session_title', args: { session_id: 'local_other', title: 'Report clienti' } })])
+  expect(JSON.parse(files[`${INBOX}/${OTHER}.result.json`])).toEqual(expect.objectContaining({ id: 'r1', action: 'rename', status: 'done' }))
+})
+
+// A terminal session has no app id: the session itself renames, with its /rename.
+test('a terminal session renames itself with /rename', async ($, on) => {
+  const T = 1_800_000_000_000
+  const clock = mock.clock(on, { now: T })
+  mock.env(on, { HOME: '/h' })
+  const files: Record<string, string> = {
+    [`${INBOX}/s1.json`]: JSON.stringify({ id: 'r2', action: 'rename', title: 'Deploy staging', at: T }),
+  }
+  const runs: string[] = []
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 's1' }))
+  on('fs.read', (_, e) => (e.path in files ? { value: files[e.path] } : { deny: 'missing' }))
+  on('fs.list', () => ({ value: [] }))
+  on('fs.write', (_, e) => {
+    files[e.path] = e.text
+    return { value: undefined }
+  })
+  on('command.run', (_, e) => {
+    runs.push(`/${e.command} ${e.args}`)
+    return { text: '' }
+  })
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.advance(1500)
+  expect(runs).toEqual(['/rename Deploy staging'])
+  expect(JSON.parse(files[`${INBOX}/s1.result.json`])).toEqual(expect.objectContaining({ id: 'r2', status: 'done' }))
 })
 
 test('a session the app does not answer gives the archive up after 10 s for another to take', async ($, on) => {

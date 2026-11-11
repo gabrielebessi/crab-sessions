@@ -156,6 +156,15 @@ h1 { font-family: var(--display); font-weight: 700; font-size: 26px; letter-spac
 .title { border: 0; background: none; padding: 0; text-align: left; font-weight: 600; font-size: 15px; line-height: 1.25; cursor: pointer; overflow-wrap: anywhere; }
 .title:hover:not(:disabled) { color: var(--coral); }
 .title:disabled { cursor: default; }
+/* the pencil shows on the card under the pointer or with focus inside; always on touch screens */
+.title-row { display: flex; align-items: flex-start; gap: 2px; min-width: 0; }
+.title-row .title { min-width: 0; }
+.rename { flex: none; border: 0; background: none; padding: 2px; margin-top: -1px; border-radius: 6px; color: var(--muted); cursor: pointer; line-height: 0; opacity: 0; transition: opacity .12s; }
+.rename .px { width: 16px; height: 16px; }
+.rename:hover { color: var(--coral); background: var(--surface-2); }
+.card:hover .rename, .dhead:hover .rename, .rename:focus-visible { opacity: 1; }
+.rename:disabled { display: none; }
+@media (hover: none) { .rename { opacity: 1; } }
 .meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 10px; min-width: 0; }
 .meta span { overflow-wrap: anywhere; }
 .pill { justify-self: start; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--state-c); background: var(--state-bg); border-radius: 999px; padding: 2px 9px; font-variant-numeric: tabular-nums; }
@@ -163,11 +172,13 @@ h1 { font-family: var(--display); font-weight: 700; font-size: 26px; letter-spac
 .numbers { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* the crab says it has finished, until the session starts again or falls asleep */
-.bubble { position: relative; align-self: flex-start; max-width: 100%; margin: -2px 0 0; font-family: var(--display); font-weight: 500; font-size: 14px; line-height: 1.2; color: var(--ink); background: var(--surface); border: 2px solid var(--ink); border-radius: 10px; padding: 6px 11px; box-shadow: 3px 3px 0 color-mix(in srgb, var(--ink) 16%, transparent); overflow-wrap: anywhere; transform-origin: 30px 0; }
+.crab-at { position: relative; line-height: 0; }
+/* over what is below the crab, so the card keeps its height; clicks go through to it */
+.bubble { position: absolute; top: calc(100% + 8px); left: 0; z-index: 3; width: max-content; max-width: min(240px, calc(100vw - 64px)); margin: 0; pointer-events: none; font-family: var(--display); font-weight: 500; font-size: 14px; line-height: 1.2; color: var(--ink); background: var(--surface); border: 2px solid var(--ink); border-radius: 10px; padding: 6px 11px; box-shadow: 3px 3px 0 color-mix(in srgb, var(--ink) 16%, transparent); overflow-wrap: anywhere; transform-origin: 30px 0; }
 .bubble.pop { animation: bubble-pop .36s steps(4, end) both; }
-.bubble::before, .bubble::after { content: ""; position: absolute; left: 22px; border-style: solid; border-color: transparent; }
+.bubble::before, .bubble::after { content: ""; position: absolute; left: 26px; border-style: solid; border-color: transparent; }
 .bubble::before { bottom: 100%; border-width: 0 7px 9px 7px; border-bottom-color: var(--ink); }
-.bubble::after { bottom: calc(100% - 3px); left: 25px; border-width: 0 4px 6px 4px; border-bottom-color: var(--surface); }
+.bubble::after { bottom: calc(100% - 3px); left: 29px; border-width: 0 4px 6px 4px; border-bottom-color: var(--surface); }
 @keyframes bubble-pop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
 
 .agents { border-top: 1px dashed var(--line); padding-top: 8px; display: grid; gap: 6px; }
@@ -311,6 +322,7 @@ dialog::backdrop { background: rgba(8, 16, 20, .45); }
 .sheet { display: grid; gap: 12px; padding: 18px; }
 .sheet h2 { margin: 0; font-size: 17px; font-weight: 600; text-wrap: balance; }
 .sheet p { margin: 0; color: var(--muted); }
+.sheet input[type="text"] { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); padding: 8px 10px; font: inherit; }
 .sheet textarea { width: 100%; min-height: 110px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); padding: 10px; font: inherit; }
 .sheet .row, .detail .row { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .detail { display: grid; gap: 12px; padding: 18px; }
@@ -397,6 +409,7 @@ const ACTION_LABEL = {
   compact: { queued: 'Compattazione in coda…', running: 'Compattazione in corso…', done: 'Conversazione compattata' },
   clear: { queued: 'Pulizia in coda…', running: 'Pulizia in corso…', done: 'Conversazione pulita' },
   split: { queued: 'Copia in coda…', running: 'Avvio della copia…', done: 'Copia avviata' },
+  rename: { queued: 'Rinomina in coda…', running: 'Rinomina in corso…', done: 'Rinominata' },
   archive: { queued: 'Archiviazione in coda…', running: 'Archiviazione in corso…', done: 'Archiviata' },
   desktop: { queued: 'Passaggio all’app in coda…', running: 'Passaggio all’app…', done: 'Si apre nell’app' },
 }
@@ -414,6 +427,7 @@ const ICONS = {
   run: [[1,2,2,2],[3,4,2,2],[1,6,2,2],[6,9,5,2]],
   changes: [[2,0,2,6],[0,2,6,2],[6,9,6,2]],
   graph: [[2,0,2,12],[1,8,4,3],[8,0,2,4],[7,4,2,1],[6,5,2,1],[5,6,2,1],[4,7,2,1],[7,1,4,2]],
+  rename: [[0,11,1,1],[1,9,2,2],[3,7,2,2],[4,6,2,2],[5,5,2,2],[6,4,2,2],[7,3,2,2],[8,2,2,2],[10,0,2,2]],
   desktop: [[0,0,6,1],[0,1,1,4],[5,1,1,4],[0,5,6,1],[2,2,1,1],[3,3,1,1],[6,2,3,1],[8,3,1,2],[7,5,3,1],[8,6,1,1],[3,7,9,1],[3,8,1,4],[11,8,1,4],[3,11,9,1]],
 }
 // The generated set (artifact/icons/icons.json), when there is one: [x, y, width, colour] per run.
@@ -673,8 +687,18 @@ function renderLimits(snap) {
   }
 }
 
-// the summary sticks once its top edge leaves the view
-new IntersectionObserver(([e]) => document.getElementById('summary').classList.toggle('stuck', !e.isIntersecting))
+// The summary sticks once its top edge leaves the view. The tighter version is shorter: the
+// margin below it takes up the difference, so the page keeps its height. Without it the
+// browser's scroll anchoring pulls the page back up by that much, the edge comes back into
+// view, the summary grows again, and scrolling is caught in that loop.
+function setStuck(isStuck) {
+  const el = document.getElementById('summary')
+  if (el.classList.contains('stuck') === isStuck) return
+  const full = el.offsetHeight
+  el.classList.toggle('stuck', isStuck)
+  el.style.marginBottom = isStuck ? `${full - el.offsetHeight - 8}px` : ''
+}
+new IntersectionObserver(([e]) => setStuck(!e.isIntersecting))
   .observe(document.getElementById('summary-edge'))
 
 // Fable's window comes from the desktop app's usage card; its tokens are counted from the transcripts.
@@ -793,15 +817,20 @@ function card(row, now) {
 
   return h('article', { class: `card s-${kind}${row.example ? ' is-example' : ''}`, 'aria-label': row.title, 'data-card': row.id },
     h('div', { class: 'head' },
-      h('button', { class: 'crab', type: 'button', title: row.example ? '' : 'Dettaglio della sessione', 'data-focus': `${row.id}:crab`, disabled: row.example, onclick: view },
-        sprite(row.crab, SHORT[kind])),
+      h('div', { class: 'crab-at' },
+        h('button', { class: 'crab', type: 'button', title: row.example ? '' : 'Dettaglio della sessione', 'data-focus': `${row.id}:crab`, disabled: row.example, onclick: view },
+          sprite(row.crab, SHORT[kind])),
+        bubble(row),
+      ),
       h('div', { class: 'who' },
-        h('button', { class: 'title', type: 'button', 'data-focus': `${row.id}:title`, disabled: row.example, onclick: view }, row.title),
+        h('div', { class: 'title-row' },
+          h('button', { class: 'title', type: 'button', 'data-focus': `${row.id}:title`, disabled: row.example, onclick: view }, row.title),
+          renameBtn(row),
+        ),
         h('div', { class: 'meta' }, meta),
         h('span', { class: 'pill' }, `${SHORT[kind]} · ${ago(now - row.since)}`),
       ),
     ),
-    bubble(row),
     h('div', { class: 'card-body' },
       st ? h('div', { class: `status ${st.cls}`, role: 'status' }, st.text) : null,
       row.ledger ? h('div', { class: 'numbers' }, `${tokens(row.ledger.fresh)} token · ${usd(row.ledger.usd)}`) : null,
@@ -875,7 +904,7 @@ function detailHead(row, detail, now) {
   return h('section', { class: `dhead s-${kind}` },
     h('span', { class: 'crab', 'aria-hidden': 'true' }, sprite(row.crab, '')),
     h('div', { class: 'who' },
-      h('h2', null, row.title),
+      h('div', { class: 'title-row' }, h('h2', null, row.title), renameBtn(row)),
       h('div', { class: 'meta' }, meta),
       h('span', { class: 'pill' }, `${SHORT[kind]} · ${ago(now - row.since)}`),
     ),
@@ -1346,11 +1375,12 @@ async function openSession(row) {
   }
 }
 
-async function runAction(row, action, prompt) {
+// extra: what the action needs besides the session, `prompt` for split, `title` for rename
+async function runAction(row, action, extra = {}) {
   ui.pending[row.id] = { action, at: Date.now() }
   render()
   try {
-    const res = await mcp.callTool(SERVER, 'session_action', { sessionId: row.id, action, ...(prompt ? { prompt } : {}) }, { cache: false })
+    const res = await mcp.callTool(SERVER, 'session_action', { sessionId: row.id, action, ...extra }, { cache: false })
     if (res.payload?.started) { delete ui.pending[row.id]; toast('Copia avviata in una nuova finestra del Terminale.') }
   } catch (err) {
     delete ui.pending[row.id]
@@ -1447,10 +1477,41 @@ function askSplit(row) {
       h('button', { class: 'btn primary', type: 'button', onclick: () => {
         const text = area.value.trim()
         if (!text) { area.focus(); toast('Scrivi cosa deve fare la copia.'); return }
-        close(); runAction(row, 'split', text)
+        close(); runAction(row, 'split', { prompt: text })
       } }, 'Avvia copia'),
     ),
   ])
+}
+
+const renameBtn = row => h('button', {
+  class: 'rename', type: 'button', 'aria-label': 'Rinomina la sessione', title: 'Rinomina',
+  'data-focus': `${row.id}:rename`, disabled: row.example || isBusy(row), onclick: () => askRename(row),
+}, icon('rename'))
+
+function askRename(row) {
+  const input = h('input', { type: 'text', id: 'renameTitle', value: row.title, maxlength: '100', autocomplete: 'off' })
+  const where = row.origin === 'desktop' ? 'Il nome cambia anche nell’app.' : 'Lo cambia /rename nella sessione, appena si ferma.'
+  const save = close => {
+    const title = input.value.trim()
+    if (!title) { input.focus(); toast('Scrivi il nuovo nome.'); return }
+    close()
+    if (title !== row.title) runAction(row, 'rename', { title })
+  }
+  sheet(close => {
+    // Enter would submit the form, which closes the dialog without saving
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); save(close) } })
+    return [
+      h('h2', null, 'Rinomina la sessione'),
+      h('p', null, where),
+      h('label', { for: 'renameTitle' }, 'Nome'),
+      input,
+      h('div', { class: 'row' },
+        h('button', { class: 'btn', value: 'cancel' }, 'Annulla'),
+        h('button', { class: 'btn primary', type: 'button', onclick: () => save(close) }, 'Rinomina'),
+      ),
+    ]
+  })
+  input.select()
 }
 
 async function openAgent(row, a) {
