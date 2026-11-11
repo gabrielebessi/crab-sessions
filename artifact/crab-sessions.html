@@ -162,6 +162,14 @@ h1 { font-family: var(--display); font-weight: 700; font-size: 26px; letter-spac
 .badge { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
 .numbers { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
+/* the crab says it has finished, until the session starts again or falls asleep */
+.bubble { position: relative; align-self: flex-start; max-width: 100%; margin: -2px 0 0; font-family: var(--display); font-weight: 500; font-size: 14px; line-height: 1.2; color: var(--ink); background: var(--surface); border: 2px solid var(--ink); border-radius: 10px; padding: 6px 11px; box-shadow: 3px 3px 0 color-mix(in srgb, var(--ink) 16%, transparent); overflow-wrap: anywhere; transform-origin: 30px 0; }
+.bubble.pop { animation: bubble-pop .36s steps(4, end) both; }
+.bubble::before, .bubble::after { content: ""; position: absolute; left: 22px; border-style: solid; border-color: transparent; }
+.bubble::before { bottom: 100%; border-width: 0 7px 9px 7px; border-bottom-color: var(--ink); }
+.bubble::after { bottom: calc(100% - 3px); left: 25px; border-width: 0 4px 6px 4px; border-bottom-color: var(--surface); }
+@keyframes bubble-pop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+
 .agents { border-top: 1px dashed var(--line); padding-top: 8px; display: grid; gap: 6px; }
 .agents-bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .swim { display: flex; align-items: center; flex: none; }
@@ -336,6 +344,7 @@ dialog::backdrop { background: rgba(8, 16, 20, .45); }
 }
 @media (prefers-reduced-motion: reduce) {
   .live[data-state="live"] .dot { animation: none; }
+  .bubble.pop { animation: none; }
 }
 </style>
 
@@ -445,6 +454,10 @@ const ui = {
   diffs: new Map(),
   graph: null,
   wake: null,
+  // each session's state at the last snapshot, to catch the end of a turn
+  states: null,
+  // what the crab of a session that just finished says
+  done: {},
 }
 let mcp = null
 
@@ -524,6 +537,78 @@ function toast(text) {
   el.hidden = false
   clearTimeout(toastTimer)
   toastTimer = setTimeout(() => { el.hidden = true }, 4200)
+}
+
+// ---------------------------------------------------------------- end of a turn
+
+const DONE_LINES = ['Fatto! Tocca a te.', 'Ho finito, ti aspetto qui.', 'Lavoro finito, chele libere!', 'Pronto! Ci dai un’occhiata?']
+let lastLine = -1
+function doneLine() {
+  let i
+  do i = Math.floor(Math.random() * DONE_LINES.length); while (i === lastLine)
+  lastLine = i
+  return DONE_LINES[i]
+}
+
+// A session that was working and now waits on you has finished: a chime and a line from its crab.
+// The line goes once the session works again or its crab falls asleep.
+function noteFinished(rows) {
+  const before = ui.states
+  ui.states = new Map(rows.map(r => [r.id, r.state]))
+  if (!before) return
+  let finished = false
+  for (const r of rows) {
+    if (before.get(r.id) === 'working' && r.state === 'waiting') {
+      ui.done[r.id] = { text: doneLine(), at: Date.now() }
+      finished = true
+    } else if (crabKind(r) !== 'waiting') {
+      delete ui.done[r.id]
+    }
+  }
+  if (finished) chime()
+}
+const doneSays = row => (crabKind(row) === 'waiting' ? ui.done[row.id] : undefined)
+// the board is redrawn often: only a line just said pops in
+function bubble(row) {
+  const said = doneSays(row)
+  if (!said) return null
+  return h('p', { class: `bubble${Date.now() - said.at < 1500 ? ' pop' : ''}` }, said.text)
+}
+
+let audio
+let lastChime = 0
+function audioCtx() {
+  if (audio === undefined) {
+    try { audio = new (window.AudioContext || window.webkitAudioContext)() } catch { audio = null }
+  }
+  return audio
+}
+// the page may play sound only after a gesture: the first click or key unlocks it
+for (const type of ['pointerdown', 'keydown']) {
+  window.addEventListener(type, () => { const c = audioCtx(); if (c?.state === 'suspended') c.resume().catch(() => {}) }, { passive: true })
+}
+// two soft sine notes going up, quiet
+function chime() {
+  const c = audioCtx()
+  if (!c || Date.now() - lastChime < 2000) return
+  lastChime = Date.now()
+  if (c.state === 'suspended') c.resume().catch(() => {})
+  const t0 = c.currentTime + 0.03
+  const out = c.createGain()
+  out.gain.value = 0.1
+  out.connect(c.destination)
+  for (const [freq, delay] of [[659.25, 0], [987.77, 0.13]]) {
+    const osc = c.createOscillator()
+    const env = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = freq
+    env.gain.setValueAtTime(0.0001, t0 + delay)
+    env.gain.exponentialRampToValueAtTime(1, t0 + delay + 0.02)
+    env.gain.exponentialRampToValueAtTime(0.0001, t0 + delay + 0.9)
+    osc.connect(env).connect(out)
+    osc.start(t0 + delay)
+    osc.stop(t0 + delay + 0.95)
+  }
 }
 
 // ---------------------------------------------------------------- navigation
@@ -716,6 +801,7 @@ function card(row, now) {
         h('span', { class: 'pill' }, `${SHORT[kind]} · ${ago(now - row.since)}`),
       ),
     ),
+    bubble(row),
     h('div', { class: 'card-body' },
       st ? h('div', { class: `status ${st.cls}`, role: 'status' }, st.text) : null,
       row.ledger ? h('div', { class: 'numbers' }, `${tokens(row.ledger.fresh)} token · ${usd(row.ledger.usd)}`) : null,
@@ -1196,6 +1282,7 @@ async function startLoop() {
 
 // Open diffs follow their file: one whose line counts changed is read again.
 function afterSnapshot(p) {
+  noteFinished(p.rows)
   const files = p.detail?.id === ui.focus ? p.detail?.git?.files || [] : []
   for (const path of [...ui.openFiles]) {
     const f = files.find(x => x.path === path)
