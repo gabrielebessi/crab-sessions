@@ -28,8 +28,8 @@ all'artifact, continuano a funzionare.
 
 Claude Code su Windows e in WSL tiene le sessioni in due `~/.claude` diversi, e il pannello vede solo quelle del suo
 lato. Con l'opzione **Home dell'altro lato** (`otherHome`) mostra anche le altre: su Windows la home WSL
-(`//wsl.localhost/Ubuntu/home/<utente>`), in WSL quella Windows (`/mnt/c/Users/<utente>`). Su Windows serve anche
-`HOME` impostata (es. `C:\Users\<utente>`), che il plugin usa per trovare il proprio `~/.claude`.
+(`//wsl.localhost/Ubuntu/home/<utente>`), in WSL quella Windows (`/mnt/c/Users/<utente>`). Su Windows, dove `HOME`
+di solito non c'è, il plugin trova il proprio `~/.claude` da `USERPROFILE`.
 
 ## Variante artifact
 

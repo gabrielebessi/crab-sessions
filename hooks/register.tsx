@@ -47,6 +47,9 @@ const fmtTokens = (n: number) =>
 const PANE_AGENTS = { windowMs: 30 * 60 * 1000, max: 12 }
 const INBOX_MS = 1500
 
+// Windows has no HOME of its own: its home is USERPROFILE
+const homeOf = async ($: EngineInterface) => (await $.env.get('HOME')) || (await $.env.get('USERPROFILE')) || ''
+
 // $.fs as the shared reader wants it
 const ioOf = ($: EngineInterface): Io => ({
   list: dir => $.fs.list(dir),
@@ -61,7 +64,7 @@ const TRACE_LINES = 300
 // each session writes what it waits on, and every panel reads it.
 async function setFlag($: EngineInterface, kind?: Flag) {
   try {
-    const home = (await $.env.get('HOME')) ?? ''
+    const home = await homeOf($)
     await $.fs.write(flagFile(home, await $.session.id()), kind ? `${kind}:${await $.clock.now()}` : '0')
   } catch {
     // a flag must never break a turn
@@ -71,7 +74,7 @@ async function setFlag($: EngineInterface, kind?: Flag) {
 // Trial log of the events that set or clear the flag: ~/.claude/crab-sessions/events.log
 async function trace($: EngineInterface, name: string, detail = '') {
   try {
-    const home = (await $.env.get('HOME')) ?? ''
+    const home = await homeOf($)
     const file = `${home}/.claude/crab-sessions/events.log`
     const old = await $.fs.read(file).catch(() => '')
     const at = new Date(await $.clock.now()).toISOString()
@@ -84,7 +87,7 @@ async function trace($: EngineInterface, name: string, detail = '') {
 
 // Drops the flag when something proves the wait is over; logs only when it had one.
 async function clearFlag($: EngineInterface, by: string) {
-  const home = (await $.env.get('HOME')) ?? ''
+  const home = await homeOf($)
   const flag = await readFlag(ioOf($), home, await $.session.id())
   if (!flag) return
   await setFlag($)
@@ -178,7 +181,7 @@ async function stampFableLimit($: EngineInterface, home: string, now: number) {
 }
 
 async function refresh($: EngineInterface, otherHome: string) {
-  const home = (await $.env.get('HOME')) ?? ''
+  const home = await homeOf($)
   const io = ioOf($)
   const now = await $.clock.now()
   void stampFableLimit($, home, now)
@@ -250,7 +253,7 @@ async function archiveWithoutRemoteControl($: EngineInterface, hostId: string, f
 // running it at once; one whose call times out lets it go, and the next session tries.
 async function runAppCommands($: EngineInterface, worker: AppWorker) {
   if (worker.isBusy) return
-  const home = (await $.env.get('HOME')) ?? ''
+  const home = await homeOf($)
   const me = await $.session.id()
   const dir = inboxDir(home)
   const entries = await $.fs.list(dir).catch(() => [])
@@ -322,7 +325,7 @@ function startRefresh($: EngineInterface, pane: PaneTimer, otherHome: string) {
 // session, run here once, answered in a result file the artifact reads back.
 async function runInbox($: EngineInterface, inbox: { handled?: string; isBusy: boolean }) {
   if (inbox.isBusy) return
-  const home = (await $.env.get('HOME')) ?? ''
+  const home = await homeOf($)
   const id = await $.session.id()
   const cmd = await $.fs
     .read(commandFile(home, id))
@@ -433,7 +436,7 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     try {
-      const home = (await $.env.get('HOME')) ?? ''
+      const home = await homeOf($)
       const file = ledgerFile(home, await $.session.id())
       const old = await $.fs
         .read(file)
