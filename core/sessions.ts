@@ -165,21 +165,33 @@ export async function collectSessions(io: Io, home: string, opts: CollectOptions
 
 type LimitsFile = { at: number; limits: Limit[] }
 
+// The other side of a Windows + WSL machine, read from this one: from Windows a WSL session's
+// socket is checked under the share's root (//wsl.localhost/<distro>); from WSL a Windows named
+// pipe cannot be checked, and Windows removes a session's registry file when it ends.
+export function otherSideIo(io: Io, otherHome: string): Io {
+  const root = /^[\\/]{2}[^\\/]+[\\/][^\\/]+/.exec(otherHome)?.[0] ?? ''
+  return {
+    ...io,
+    exists: path => (path.startsWith('\\\\.\\pipe\\') ? Promise.resolve(true) : io.exists(path.startsWith('/') ? root + path : path)),
+  }
+}
+
 // An idle session's own rate limits go stale: each session stamps what it saw right after a
 // turn, and for each window the newest stamp of all wins. Empty when no session stamped one yet.
-export async function stampedLimits(io: Io, home: string): Promise<Limit[]> {
-  const dir = crabDir(home)
-  const entries = await io.list(dir).catch(() => [])
+export async function stampedLimits(io: Io, home: string, otherHome = ''): Promise<Limit[]> {
   const best = new Map<string, { at: number; limit: Limit }>()
-  for (const entry of entries) {
-    if (!/^limits-.+\.json$/.test(entry.name)) continue
-    try {
-      const file = JSON.parse(await io.read(`${dir}/${entry.name}`)) as LimitsFile
-      for (const limit of file.limits) {
-        if ((best.get(limit.kind)?.at ?? -1) < file.at) best.set(limit.kind, { at: file.at, limit })
+  for (const dir of [home, otherHome].filter(Boolean).map(crabDir)) {
+    const entries = await io.list(dir).catch(() => [])
+    for (const entry of entries) {
+      if (!/^limits-.+\.json$/.test(entry.name)) continue
+      try {
+        const file = JSON.parse(await io.read(`${dir}/${entry.name}`)) as LimitsFile
+        for (const limit of file.limits) {
+          if ((best.get(limit.kind)?.at ?? -1) < file.at) best.set(limit.kind, { at: file.at, limit })
+        }
+      } catch {
+        // half-written: skipped until the next refresh
       }
-    } catch {
-      // half-written: skipped until the next refresh
     }
   }
   return [...best.values()].map(b => b.limit)

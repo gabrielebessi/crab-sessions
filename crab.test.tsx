@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { fableWeek, stampedLimits, weekStart } from './core/sessions'
+import { collectSessions, fableWeek, otherSideIo, stampedLimits, weekStart } from './core/sessions'
 import type { Io } from './core/sessions'
 import { crabSvg, pickSkin, SKINS } from './hooks/sprites'
 
@@ -468,4 +468,31 @@ test('each window takes its newest stamp: a later reading without Fable keeps Fa
   expect(limits.find(l => l.kind === 'five_hour')?.percent).toBe(11)
   expect(limits.find(l => l.kind === 'seven_day')?.percent).toBe(21)
   expect(limits.find(l => l.kind === 'seven_day_fable')?.percent).toBe(34)
+})
+
+test('the other side of a Windows + WSL machine: its live sessions join, checked where they live', async () => {
+  const reg = (pid: number, id: string, socket: string) =>
+    JSON.stringify({ pid, sessionId: id, cwd: '/home/u/app', status: 'idle', messagingSocketPath: socket })
+  const files: Record<string, string> = {
+    '//wsl.localhost/Ubuntu/home/u/.claude/sessions/1.json': reg(1, 'live', '/run/user/1000/cc-socks/1.sock'),
+    '//wsl.localhost/Ubuntu/home/u/.claude/sessions/2.json': reg(2, 'gone', '/run/user/1000/cc-socks/2.sock'),
+    '/mnt/c/Users/u/.claude/sessions/3.json': reg(3, 'win', '\\\\.\\pipe\\LOCAL\\cc-msg-3'),
+  }
+  const sockets = new Set(['//wsl.localhost/Ubuntu/run/user/1000/cc-socks/1.sock'])
+  const io: Io = {
+    list: async dir => Object.keys(files).filter(f => f.startsWith(`${dir}/`)).map(f => ({ name: f.slice(dir.length + 1), mtimeMs: 0 })),
+    read: async path => {
+      if (!(path in files)) throw new Error('missing')
+      return files[path]!
+    },
+    exists: async path => sockets.has(path),
+  }
+  const opts = { now: 1, agents: { windowMs: 1, max: 1 }, skinOf: () => 'plain' }
+
+  // from Windows: a WSL socket is looked for under the share's root, a dead one hides its session
+  const fromWindows = await collectSessions(otherSideIo(io, '//wsl.localhost/Ubuntu/home/u'), '//wsl.localhost/Ubuntu/home/u', opts)
+  expect(fromWindows.map(r => r.id)).toEqual(['live'])
+  // from WSL: a Windows pipe cannot be checked, its registry file stands for the session
+  const fromWsl = await collectSessions(otherSideIo(io, '/mnt/c/Users/u'), '/mnt/c/Users/u', opts)
+  expect(fromWsl.map(r => r.id)).toEqual(['win'])
 })

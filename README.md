@@ -24,6 +24,13 @@ Se usi la variante artifact, il pannello si spegne con l'opzione **Pannello Sess
 pannello non si apre più da solo (resta `/crab` per aprirlo a mano), mentre stati, token e comandi, che servono
 all'artifact, continuano a funzionare.
 
+### Windows + WSL
+
+Claude Code su Windows e in WSL tiene le sessioni in due `~/.claude` diversi, e il pannello vede solo quelle del suo
+lato. Con l'opzione **Home dell'altro lato** (`otherHome`) mostra anche le altre: su Windows la home WSL
+(`//wsl.localhost/Ubuntu/home/<utente>`), in WSL quella Windows (`/mnt/c/Users/<utente>`). Su Windows serve anche
+`HOME` impostata (es. `C:\Users\<utente>`), che il plugin usa per trovare il proprio `~/.claude`.
+
 ## Variante artifact
 
 `artifact/crab-sessions.html` è la stessa vista come pagina claude.ai, pubblicata su

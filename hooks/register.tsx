@@ -16,6 +16,8 @@ import {
   isAppCommand,
   ledgerFile,
   limitsFile,
+  ORDER,
+  otherSideIo,
   readFlag,
   resultFile,
   stampedLimits,
@@ -175,14 +177,18 @@ async function stampFableLimit($: EngineInterface, home: string, now: number) {
   }
 }
 
-async function refresh($: EngineInterface) {
+async function refresh($: EngineInterface, otherHome: string) {
   const home = (await $.env.get('HOME')) ?? ''
   const io = ioOf($)
   const now = await $.clock.now()
   void stampFableLimit($, home, now)
-  const rows = await collectSessions(io, home, { now, ownId: await $.session.id(), agents: PANE_AGENTS, skinOf: pickSkin })
+  const opts = { now, ownId: await $.session.id(), agents: PANE_AGENTS, skinOf: pickSkin }
+  const rows = [
+    ...(await collectSessions(io, home, opts)),
+    ...(otherHome ? await collectSessions(otherSideIo(io, otherHome), otherHome, opts) : []),
+  ].sort((a, b) => ORDER[a.state] - ORDER[b.state] || a.since - b.since)
   // nothing stamped yet: this session's own reading, better than nothing
-  const stamped = await stampedLimits(io, home)
+  const stamped = await stampedLimits(io, home, otherHome)
   const limits = stamped.length > 0 ? stamped : await ownLimits($)
 
   await update($, view, old => ({ rows, limits, at: now, fable: old.fable }))
@@ -304,10 +310,10 @@ async function runAppCommands($: EngineInterface, worker: AppWorker) {
 type PaneTimer = { timer?: { cancel: () => void } }
 
 // The pane's data, read now and every few seconds while it is open.
-function startRefresh($: EngineInterface, pane: PaneTimer) {
+function startRefresh($: EngineInterface, pane: PaneTimer, otherHome: string) {
   pane.timer?.cancel()
   // a refresh that fails keeps the last view: the next one tries again
-  const tick = () => void refresh($).catch(() => undefined)
+  const tick = () => void refresh($, otherHome).catch(() => undefined)
   tick()
   pane.timer = $.clock.every(REFRESH_MS, tick)
 }
@@ -385,6 +391,7 @@ export const register: Register = (on, options) => {
   // off, the pane no longer opens by itself: the artifact took its place. The hooks below
   // stay, as the artifact reads the flags, tokens and limits they write and queues its commands.
   const showPane = options.showPane !== false
+  const otherHome = typeof options.otherHome === 'string' ? options.otherHome.trim() : ''
   const pane: PaneTimer = {}
   let inboxTimer: { cancel: () => void } | undefined
   const inbox: { handled?: string; isBusy: boolean } = { isBusy: false }
@@ -404,7 +411,7 @@ export const register: Register = (on, options) => {
     await $.command.register({ name: 'crab', description: 'Mostra il pannello delle sessioni con il granchio' })
     if (showPane) {
       void $.ui.open({ id: PANE, title: 'Sessioni' })
-      startRefresh($, pane)
+      startRefresh($, pane, otherHome)
     } else {
       // turned off while the pane was open: the reload with the new option closes it
       pane.timer?.cancel()
@@ -417,7 +424,7 @@ export const register: Register = (on, options) => {
   // asked for by name, the pane opens even with the option off
   on('command.run', { command: 'crab' }, async $ => {
     await $.ui.open({ id: PANE, title: 'Sessioni' })
-    startRefresh($, pane)
+    startRefresh($, pane, otherHome)
 
     return { text: 'Pannello sessioni aperto.' }
   })
