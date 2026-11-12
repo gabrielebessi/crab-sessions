@@ -11,6 +11,14 @@
       "default": true,
       "required": false,
       "sensitive": false
+    },
+    "otherHome": {
+      "type": "string",
+      "title": "Home dell'altro lato (Windows + WSL)",
+      "description": "Su Windows la home WSL (//wsl.localhost/Ubuntu/home/<utente>), su WSL quella Windows (/mnt/c/Users/<utente>): il pannello mostra anche le sessioni dell'altro lato. Vuoto, solo le sessioni di questo lato.",
+      "default": "",
+      "required": false,
+      "sensitive": false
     }
   }
 }

@@ -16,6 +16,8 @@ import {
   isAppCommand,
   ledgerFile,
   limitsFile,
+  ORDER,
+  otherSideIo,
   readFlag,
   resultFile,
   stampedLimits,
@@ -45,6 +47,9 @@ const fmtTokens = (n: number) =>
 const PANE_AGENTS = { windowMs: 30 * 60 * 1000, max: 12 }
 const INBOX_MS = 1500
 
+// Windows has no HOME of its own: its home is USERPROFILE
+const homeOf = async ($: EngineInterface) => (await $.env.get('HOME')) || (await $.env.get('USERPROFILE')) || ''
+
 // $.fs as the shared reader wants it
 const ioOf = ($: EngineInterface): Io => ({
   list: dir => $.fs.list(dir),
@@ -59,7 +64,7 @@ const TRACE_LINES = 300
 // each session writes what it waits on, and every panel reads it.
 async function setFlag($: EngineInterface, kind?: Flag) {
   try {
-    const home = (await $.env.get('HOME')) ?? ''
+    const home = await homeOf($)
     await $.fs.write(flagFile(home, await $.session.id()), kind ? `${kind}:${await $.clock.now()}` : '0')
   } catch {
     // a flag must never break a turn
@@ -69,7 +74,7 @@ async function setFlag($: EngineInterface, kind?: Flag) {
 // Trial log of the events that set or clear the flag: ~/.claude/crab-sessions/events.log
 async function trace($: EngineInterface, name: string, detail = '') {
   try {
-    const home = (await $.env.get('HOME')) ?? ''
+    const home = await homeOf($)
     const file = `${home}/.claude/crab-sessions/events.log`
     const old = await $.fs.read(file).catch(() => '')
     const at = new Date(await $.clock.now()).toISOString()
@@ -82,7 +87,7 @@ async function trace($: EngineInterface, name: string, detail = '') {
 
 // Drops the flag when something proves the wait is over; logs only when it had one.
 async function clearFlag($: EngineInterface, by: string) {
-  const home = (await $.env.get('HOME')) ?? ''
+  const home = await homeOf($)
   const flag = await readFlag(ioOf($), home, await $.session.id())
   if (!flag) return
   await setFlag($)
@@ -175,14 +180,18 @@ async function stampFableLimit($: EngineInterface, home: string, now: number) {
   }
 }
 
-async function refresh($: EngineInterface) {
-  const home = (await $.env.get('HOME')) ?? ''
+async function refresh($: EngineInterface, otherHome: string) {
+  const home = await homeOf($)
   const io = ioOf($)
   const now = await $.clock.now()
   void stampFableLimit($, home, now)
-  const rows = await collectSessions(io, home, { now, ownId: await $.session.id(), agents: PANE_AGENTS, skinOf: pickSkin })
+  const opts = { now, ownId: await $.session.id(), agents: PANE_AGENTS, skinOf: pickSkin }
+  const rows = [
+    ...(await collectSessions(io, home, opts)),
+    ...(otherHome ? await collectSessions(otherSideIo(io, otherHome), otherHome, opts) : []),
+  ].sort((a, b) => ORDER[a.state] - ORDER[b.state] || a.since - b.since)
   // nothing stamped yet: this session's own reading, better than nothing
-  const stamped = await stampedLimits(io, home)
+  const stamped = await stampedLimits(io, home, otherHome)
   const limits = stamped.length > 0 ? stamped : await ownLimits($)
 
   await update($, view, old => ({ rows, limits, at: now, fable: old.fable }))
@@ -244,7 +253,7 @@ async function archiveWithoutRemoteControl($: EngineInterface, hostId: string, f
 // running it at once; one whose call times out lets it go, and the next session tries.
 async function runAppCommands($: EngineInterface, worker: AppWorker) {
   if (worker.isBusy) return
-  const home = (await $.env.get('HOME')) ?? ''
+  const home = await homeOf($)
   const me = await $.session.id()
   const dir = inboxDir(home)
   const entries = await $.fs.list(dir).catch(() => [])
@@ -304,10 +313,10 @@ async function runAppCommands($: EngineInterface, worker: AppWorker) {
 type PaneTimer = { timer?: { cancel: () => void } }
 
 // The pane's data, read now and every few seconds while it is open.
-function startRefresh($: EngineInterface, pane: PaneTimer) {
+function startRefresh($: EngineInterface, pane: PaneTimer, otherHome: string) {
   pane.timer?.cancel()
   // a refresh that fails keeps the last view: the next one tries again
-  const tick = () => void refresh($).catch(() => undefined)
+  const tick = () => void refresh($, otherHome).catch(() => undefined)
   tick()
   pane.timer = $.clock.every(REFRESH_MS, tick)
 }
@@ -316,7 +325,7 @@ function startRefresh($: EngineInterface, pane: PaneTimer) {
 // session, run here once, answered in a result file the artifact reads back.
 async function runInbox($: EngineInterface, inbox: { handled?: string; isBusy: boolean }) {
   if (inbox.isBusy) return
-  const home = (await $.env.get('HOME')) ?? ''
+  const home = await homeOf($)
   const id = await $.session.id()
   const cmd = await $.fs
     .read(commandFile(home, id))
@@ -385,6 +394,7 @@ export const register: Register = (on, options) => {
   // off, the pane no longer opens by itself: the artifact took its place. The hooks below
   // stay, as the artifact reads the flags, tokens and limits they write and queues its commands.
   const showPane = options.showPane !== false
+  const otherHome = typeof options.otherHome === 'string' ? options.otherHome.trim() : ''
   const pane: PaneTimer = {}
   let inboxTimer: { cancel: () => void } | undefined
   const inbox: { handled?: string; isBusy: boolean } = { isBusy: false }
@@ -404,7 +414,7 @@ export const register: Register = (on, options) => {
     await $.command.register({ name: 'crab', description: 'Mostra il pannello delle sessioni con il granchio' })
     if (showPane) {
       void $.ui.open({ id: PANE, title: 'Sessioni' })
-      startRefresh($, pane)
+      startRefresh($, pane, otherHome)
     } else {
       // turned off while the pane was open: the reload with the new option closes it
       pane.timer?.cancel()
@@ -417,7 +427,7 @@ export const register: Register = (on, options) => {
   // asked for by name, the pane opens even with the option off
   on('command.run', { command: 'crab' }, async $ => {
     await $.ui.open({ id: PANE, title: 'Sessioni' })
-    startRefresh($, pane)
+    startRefresh($, pane, otherHome)
 
     return { text: 'Pannello sessioni aperto.' }
   })
@@ -426,7 +436,7 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     try {
-      const home = (await $.env.get('HOME')) ?? ''
+      const home = await homeOf($)
       const file = ledgerFile(home, await $.session.id())
       const old = await $.fs
         .read(file)
